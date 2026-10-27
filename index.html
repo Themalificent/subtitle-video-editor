@@ -73,6 +73,7 @@ h1{font-size:30px;line-height:1.15;margin:4px 0 6px;font-weight:700;letter-spaci
 .stage-tip.warn{color:#FFC27A;font-weight:700}
 .subedit{margin-top:12px;display:grid;gap:10px;color:#DDE4F2}
 .subedit .modes{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.subedit .modes[hidden]{display:none}
 .subedit button{min-height:48px;border-radius:12px;border:2px solid #44527A;background:#18233D;color:#F2F5FC;font:inherit;font-weight:700;font-size:17px;cursor:pointer;padding:4px 8px}
 .subedit .modes button[aria-pressed="true"]{background:#93A6FF;border-color:#93A6FF;color:#0C1220}
 .subedit button:disabled{opacity:.4;cursor:default}
@@ -261,6 +262,8 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
 .tour-row .btn.small{width:auto;min-height:44px;padding:6px 14px}
 .help-btn{margin-left:auto;flex:none;width:36px;height:36px;border-radius:50%;border:2px solid var(--line);background:var(--bg);color:var(--ink);font:inherit;font-weight:700;font-size:18px;cursor:pointer}
 .tour-again{text-align:center;margin:8px 0 24px}
+.credit-row{margin:16px 0 4px}
+.credit-row .check[hidden]{display:none}
 .env-note{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px;margin:0 0 14px;padding:12px 14px;border-radius:14px;background:var(--accent-soft);color:var(--ink);font-size:16px;line-height:1.4}
 .env-note[hidden]{display:none}
 .env-note p{margin:0;flex:1 1 200px}
@@ -504,6 +507,12 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
       <button class="linkish" id="lookAdjReset" type="button">Undo all preview adjustments</button>
     </div>
 
+    <div class="credit-row" data-help="Add a credit or source, like cr: @account or © name. It shows the whole time, smaller than the subtitles; drag it on the preview to move or resize it. It’s remembered for next time.">
+      <label class="check"><input id="creditOn" type="checkbox"> Credit</label>
+      <input id="creditText" class="lang-input" type="text" maxlength="120" autocomplete="off" placeholder="cr: @account" aria-label="Credit text" hidden>
+      <label class="check" id="creditNosubsRow" hidden><input id="creditNosubs" type="checkbox" checked> Also on videos without subtitles</label>
+      <p class="hint" id="creditHint" hidden>Tap it on the preview to move, resize or turn it.</p>
+    </div>
     <div class="style-ui" id="styleUI">
       <h3 class="sub-h" id="styleLabel">Style</h3>
       <div data-help="Ready-made caption styles. Below them you can change the font, colours, outline and box. Your style is remembered." class="presets" id="presets" role="group" aria-labelledby="styleLabel">
@@ -808,15 +817,16 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
 
   function baseAnchorY(){ return opts.pos === 'low' ? H * 0.94 : opts.pos === 'top' ? H * 0.07 : H * 0.76; }
   // Draws one block of subtitle text and returns its box in canvas pixels (null if empty).
-  function drawBlock(text, e){
+  function drawBlock(text, e, o){
     if (!text || !text.trim()) return null;
     if (style.caps) text = text.toUpperCase();
-    var fs = Math.max(4, Math.round(Math.min(W, H) * SIZES[opts.size] * e.s * fontOf().k));
+    var fs = Math.max(4, Math.round(Math.min(W, H) * SIZES[opts.size] * e.s * fontOf().k * (o ? o.k : 1)));
     ctx.font = fontFor(fs);
-    var maxW = Math.min(W * 0.96, W * WIDTHS[opts.width] * e.s * e.w);
+    var maxW = Math.min(W * 0.96, W * (o ? o.w : WIDTHS[opts.width]) * e.s * e.w);
     var lines = wrapLines(text, maxW), lh = fs * 1.24, blockH = lines.length * lh;
-    var ax = W / 2 + e.dx * W, ay = baseAnchorY() + e.dy * H;
-    var top = opts.pos === 'top' ? ay : ay - blockH;   // low/raised grow upward from the anchor
+    var ax = (o ? o.x * W : W / 2) + e.dx * W, ay = (o ? o.y * H : baseAnchorY()) + e.dy * H;
+    var top = o ? ay - blockH / 2 : opts.pos === 'top' ? ay : ay - blockH;   // low/raised grow upward from the anchor; o: centred on it
+    if (o){ ctx.save(); ctx.globalAlpha = o.alpha; }
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.lineJoin = 'round';
@@ -845,6 +855,7 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
     }
     if (style.shadow){ ctx.shadowColor = 'rgba(0,0,0,0)'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0; }
     if (r) ctx.restore();
+    if (o) ctx.restore();
     var px = style.box !== 'none' ? bx : Math.max(outline, 4), py = style.box === 'block' ? by : style.box === 'lines' ? 0 : Math.max(outline, 4);
     // x/y/w/h is the box before turning; it turns by r around (cx, cy)
     return { x: ax - widest / 2 - px, y: top - py, w: widest + 2 * px, h: blockH + 2 * py, ax: ax, cx: ax, cy: cy, r: r, cues: [] };
@@ -882,11 +893,47 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
     var s = drawBlock('Your subtitles will look like this', adjAll);
     return s ? [s] : [];
   }
+  /* ---------- Credit ----------
+     One extra caption for the whole video, for the credit or source ("cr: @account",
+     "© name"). It uses the caption style, smaller and slightly see-through. Its text, place,
+     size and angle are remembered on this device for every video; the place is a share of
+     the picture, so it keeps its corner whatever the video's size or crop. It's moved,
+     resized and turned on the preview like a subtitle and typed in its box in step 3. */
+  var CREDIT_X = 0.80, CREDIT_Y = 0.90, CREDIT_K = 0.55, CREDIT_ALPHA = 0.85, CREDIT_W = 0.5;
+  var credit = { on: false, text: '', nosubs: true, adj: { dx: 0, dy: 0, s: 1, w: 1, r: 0 } };
+  (function(){
+    var s = null; try { s = JSON.parse(localStorage.getItem('credit') || 'null'); } catch (e) {}
+    if (!s || typeof s !== 'object') return;
+    credit.on = !!s.on; credit.text = String(s.text || '').slice(0, 120); credit.nosubs = s.nosubs !== false;
+    if (s.adj) ['dx', 'dy', 's', 'w', 'r'].forEach(function(k){ if (typeof s.adj[k] === 'number' && isFinite(s.adj[k])) credit.adj[k] = s.adj[k]; });
+  })();
+  function saveCredit(){ try { localStorage.setItem('credit', JSON.stringify(credit)); } catch (e) {} }
+  // Draws the credit (when it's on and has words) and returns its box, marked credit.
+  function drawCredit(){
+    if (!credit.on || !credit.text.trim()) return null;
+    var b = drawBlock(credit.text, credit.adj, { x: CREDIT_X, y: CREDIT_Y, k: CREDIT_K, alpha: CREDIT_ALPHA, w: CREDIT_W });
+    if (b) b.credit = true;
+    return b;
+  }
+  function showCreditUI(){
+    $('creditOn').checked = credit.on; $('creditText').value = credit.text; $('creditNosubs').checked = credit.nosubs;
+    $('creditText').hidden = $('creditNosubsRow').hidden = $('creditHint').hidden = !credit.on;
+  }
+  showCreditUI();
+  $('creditOn').addEventListener('change', function(){
+    credit.on = this.checked; saveCredit(); showCreditUI();
+    if (sel && sel.credit) stopEditing();
+    if (credit.on && !credit.text.trim()) $('creditText').focus();
+    redraw();
+  });
+  $('creditText').addEventListener('input', function(){ credit.text = this.value.slice(0, 120); saveCredit(); redraw(); });
+  $('creditNosubs').addEventListener('change', function(){ credit.nosubs = this.checked; saveCredit(); });
   var blocks = [];   // subtitle boxes on the preview right now
   function drawFrame(t){
     if (!hasVideo) blocks = drawPlaceholder();
     else if (cropEditing){ ctx.drawImage(video, 0, 0, W, H); blocks = []; }   // the whole picture while choosing the crop
     else { drawVideoCropped(); blocks = drawSubsAt(t); }
+    if (!cropEditing){ var cb = drawCredit(); if (cb) blocks.push(cb); }
     mirror();
     updateSel();
   }
@@ -968,6 +1015,8 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
   function selBlock(){
     if (!sel) return null;
     for (var i = 0; i < blocks.length; i++){
+      if (!!blocks[i].credit !== !!sel.credit) continue;   // the credit box is only the credit's
+      if (sel.credit) return blocks[i];
       var c = blocks[i].cues;
       if (sel.cue < 0 ? !c.length : c.indexOf(sel.cue) >= 0) return blocks[i];
     }
@@ -979,7 +1028,7 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
     if (!c.adj && create) c.adj = { dx: 0, dy: 0, s: 1, w: 1, r: 0 };
     return c.adj || null;
   }
-  function target(){ return sel.mode === 'one' ? ownAdj(true) : adjAll; }
+  function target(){ return sel.credit ? credit.adj : sel.mode === 'one' ? ownAdj(true) : adjAll; }
   function copyAdj(t){ return { dx: t.dx, dy: t.dy, s: t.s, w: t.w, r: t.r || 0 }; }
   function resetAdj(a){ a.dx = a.dy = 0; a.s = a.w = 1; a.r = 0; }
   function isPlain(a){ return Math.abs(a.dx) < 1e-6 && Math.abs(a.dy) < 1e-6 && Math.abs(a.s - 1) < 1e-6 && Math.abs(a.w - 1) < 1e-6 && Math.abs(a.r || 0) < 1e-6; }
@@ -995,6 +1044,7 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
     return parts.join(' · ');
   }
   function selText(){
+    if (sel.credit) return describe(credit.adj);
     if (sel.mode === 'all') return describe(adjAll);
     var own = ownAdj(false);
     return own ? describe(own) + ' vs the others' : 'same as the others';
@@ -1011,7 +1061,8 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
       box.style.transform = b.r ? 'rotate(' + b.r + 'deg)' : '';   // turns around its centre, like the text
     }
     box.hidden = !b;
-    $('seStatus').textContent = (sel.mode === 'all' ? 'All subtitles: ' : 'This one: ') + selText() + (b ? '' : ' (not on screen right now)');
+    $('seStatus').textContent = (sel.credit ? 'Credit: ' : sel.mode === 'all' ? 'All subtitles: ' : 'This one: ') + selText() + (b ? '' : ' (not on screen right now)');
+    $('modeAll').parentNode.hidden = !!sel.credit;
     $('modeAll').setAttribute('aria-pressed', String(sel.mode === 'all'));
     $('modeOne').setAttribute('aria-pressed', String(sel.mode === 'one'));
     $('modeOne').disabled = sel.cue < 0;
@@ -1034,7 +1085,7 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
     if (burning) return;
     if (!video.paused) video.pause();
     var ci = b.cues.length ? b.cues[0] : -1;
-    sel = { cue: ci, mode: ci < 0 ? 'all' : (cues[ci].adj ? 'one' : (sel ? sel.mode : 'all')) };
+    sel = b.credit ? { cue: -1, mode: 'credit', credit: true } : { cue: ci, mode: ci < 0 ? 'all' : (cues[ci].adj ? 'one' : (sel ? sel.mode : 'all')) };
     screenEl.classList.add('editing');
     $('subEdit').hidden = false; $('stageTip').hidden = true;
     updateSel();
@@ -1119,7 +1170,10 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
       }
     } else {
       var p = toCanvas(e);
-      if (g.kind === 'move'){
+      if (g.kind === 'move' && sel.credit){   // the credit moves freely; its centre stays in the picture
+        t.dx = Math.max(0.02 - CREDIT_X, Math.min(0.98 - CREDIT_X, g.a0.dx + (p.x - g.start.x) / W));
+        t.dy = Math.max(0.02 - CREDIT_Y, Math.min(0.98 - CREDIT_Y, g.a0.dy + (p.y - g.start.y) / H));
+      } else if (g.kind === 'move'){
         var one = sel.mode === 'one', bx = one ? adjAll.dx : 0, by = one ? adjAll.dy : 0;
         var dx = g.a0.dx + (p.x - g.start.x) / W, dy = g.a0.dy + (p.y - g.start.y) / H;
         // snap to the picture's centre line, and (for one subtitle) in line with the others
@@ -1170,6 +1224,7 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
     if (g && g.kind === 'pinch') gesture = null;   // lifting a finger ends the pinch
     if (!pointers.size){
       gesture = null;
+      if (sel && sel.credit) saveCredit();   // the credit's place is remembered for every video
       tidyOwn();
       showGuides(null, null);
       $('readout').hidden = true;
@@ -1183,7 +1238,8 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
   $('modeOne').addEventListener('click', function(){ if (sel && sel.cue >= 0){ sel.mode = 'one'; updateSel(); } });
   $('seReset').addEventListener('click', function(){
     if (!sel) return;
-    if (sel.mode === 'all') resetAdj(adjAll);
+    if (sel.credit){ resetAdj(credit.adj); saveCredit(); }
+    else if (sel.mode === 'all') resetAdj(adjAll);
     else if (sel.cue >= 0 && cues[sel.cue]) delete cues[sel.cue].adj;
     redraw(); updateLookAdj();
   });
@@ -3517,6 +3573,7 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
               if (curSeg === resumeSeg && p < resumeSrc) return;           // already made before a restart
               drawUpright(frame, plan.rot, plan.crop);
               if (withSubs) drawSubsAt(plan.vStart + p / ts);
+              if (withSubs || credit.nosubs) drawCredit();
               mirrorSoon();
               if (side){
                 ectx.save();
@@ -4930,7 +4987,7 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
   if (window.__sb) Object.assign(window.__sb, { envNoteFor: envNoteFor, pageEnv: pageEnv, showEnvNote: showEnvNote, canShare: function(){ return canShareFiles; } });
   if (window.__sb) Object.assign(window.__sb, { orderedParts: orderedParts, moveClip: moveClip, partsFromTicks: partsFromTicks, momentsOf: momentsOf, tweetTextOf: tweetTextOf,
     findSpeech: findSpeech, findSpeechDb: findSpeechDb, decodeAudio16k: decodeAudio16k, speechDbLong: speechDbLong,
-    file: function(){ return videoFile; }, setForceLong: function(v){ forceLongSound = !!v; }, saveSession: saveSession, sessionState: sessionState, startTour: startTour, helpStops: helpStops, tourState: function(){ return tour && { k: tour.k, n: tour.stops.length, el: tour.stops[tour.k] }; }, tourDemoOn: function(){ return !!tourDemo; } });
+    file: function(){ return videoFile; }, setForceLong: function(v){ forceLongSound = !!v; }, saveSession: saveSession, sessionState: sessionState, startTour: startTour, helpStops: helpStops, tourState: function(){ return tour && { k: tour.k, n: tour.stops.length, el: tour.stops[tour.k] }; }, tourDemoOn: function(){ return !!tourDemo; }, blocksNow: function(){ return blocks; }, credit: function(){ return credit; } });
 })();
 </script>
 </body>
