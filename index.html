@@ -221,9 +221,15 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
 .moment-list[hidden]{display:none}
 .moment-list li{padding:10px 12px;border:2px solid var(--line);border-radius:12px;background:var(--bg)}
 .moment-list li.joined{border-style:dashed}
+.moment-list li{border-left-width:8px}
+.moment-list li.c0{border-left-color:#4F6BFF}
+.moment-list li.c1{border-left-color:#F2994A}
+.moment-list li.c2{border-left-color:#27AE60}
+.moment-list li.c3{border-left-color:#D946A8}
+.cue-head .cue-use + .cue-use{margin-left:6px}
 .moment-head{font-weight:700}
 .moment-words{color:var(--muted);font-size:16px;margin:2px 0 4px}
-.cue-list.locked .cue-text{pointer-events:none;color:var(--muted);background:transparent;border-color:transparent}
+.cue-list.locked .cue-row:not(.editing) .cue-text{pointer-events:none;color:var(--muted);background:transparent;border-color:transparent}
 .cue-note{margin:0 0 6px;font-size:15px;color:var(--warn)}
 .edit-row{display:flex;flex-wrap:wrap;gap:6px 18px;margin:6px 0 8px}
 .edit-row [hidden],#shiftRow[hidden]{display:none}
@@ -424,10 +430,10 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
     <p class="status" id="srtStatus">No subtitles yet.</p>
     <div id="autoReview" hidden>
       <p class="label" style="margin-top:16px">Your subtitles</p>
-      <p class="hint" style="margin:4px 0 8px">Tick Keep on the lines you want in a cut (step 4). Tick Edit lines to change a line’s words or times. Make timings starts over from the box above.</p>
+      <p class="hint" style="margin:4px 0 8px">Tick Keep on the lines you want in a cut (step 4). Tick Edit on a line (or Edit all lines) to change its words or times. Make timings starts over from the box above.</p>
       <div class="edit-row">
-        <label class="check"><input id="editLines" type="checkbox"> Edit lines</label>
-        <label class="check" id="writeBackRow" hidden><input id="writeBack" type="checkbox" checked> Also fix the pasted text</label>
+        <label class="check"><input id="editLines" type="checkbox"> Edit all lines</label>
+        <label class="check" id="writeBackRow"><input id="writeBack" type="checkbox" checked> Also fix the pasted text</label>
       </div>
       <div class="row" id="shiftRow"><button class="btn" id="shiftEarlier" type="button">All 0.25 s earlier</button><button class="btn" id="shiftLater" type="button">All 0.25 s later</button></div>
       <ol class="cue-list" id="cueList"></ol>
@@ -2390,13 +2396,14 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
   // Lines are locked (grey, no keyboard, only Play) until "Edit lines" is ticked, so
   // scrolling through a long list can't catch them.
   function renderCueList(){
-    var list = $('cueList'), editing = $('editLines').checked;
+    var list = $('cueList'), all = $('editLines').checked;
     list.textContent = '';
-    list.classList.toggle('locked', !editing);
-    $('shiftRow').hidden = !editing;
+    list.classList.toggle('locked', !all);
+    $('shiftRow').hidden = !all;
     cues.forEach(function(c, i){
       if (c.block !== undefined && (i === 0 || cues[i - 1].block !== c.block)) list.appendChild(blockHead(c.block));
-      var li = document.createElement('li'); li.className = 'cue-row' + (c.warn ? ' warn' : '') + (c.use ? ' kept' : '');
+      var editing = all || !!c.edit;
+      var li = document.createElement('li'); li.className = 'cue-row' + (c.warn ? ' warn' : '') + (c.use ? ' kept' : '') + (editing ? ' editing' : '');
       var time = document.createElement('div'); time.className = 'cue-time'; time.textContent = cueTimeLabel(c);
       var tx = document.createElement('textarea'); tx.className = 'cue-text'; tx.value = c.text; tx.rows = 1;
       tx.dataset.i = String(i); tx.disabled = burning; tx.setAttribute('aria-label', 'Words of subtitle ' + (i + 1));
@@ -2411,7 +2418,15 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
       var cb = document.createElement('input'); cb.type = 'checkbox'; cb.dataset.use = String(i); cb.checked = !!c.use; cb.disabled = burning;
       cb.setAttribute('aria-label', 'Keep line ' + (i + 1) + ' in the cut');
       use.appendChild(cb); use.appendChild(document.createTextNode('Keep'));
-      head.appendChild(use); head.appendChild(time);
+      head.appendChild(use);
+      if (!all){
+        var ed = document.createElement('label'); ed.className = 'cue-use';
+        var eb = document.createElement('input'); eb.type = 'checkbox'; eb.dataset.edit = String(i); eb.checked = !!c.edit; eb.disabled = burning;
+        eb.setAttribute('aria-label', 'Edit line ' + (i + 1));
+        ed.appendChild(eb); ed.appendChild(document.createTextNode('Edit'));
+        head.appendChild(ed);
+      }
+      head.appendChild(time);
       li.appendChild(head); li.appendChild(tx);
       if (c.wbMiss){ var note = document.createElement('p'); note.className = 'cue-note'; note.textContent = WB_MISS; li.appendChild(note); }
       li.appendChild(btns); list.appendChild(li);
@@ -2501,10 +2516,8 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
   (function(){
     var ed = $('editLines'), wb = $('writeBack');
     try { ed.checked = localStorage.getItem('editLines') === '1'; wb.checked = localStorage.getItem('writeBack') !== '0'; } catch (e) {}
-    $('writeBackRow').hidden = !ed.checked;
     ed.addEventListener('change', function(){
       try { localStorage.setItem('editLines', ed.checked ? '1' : '0'); } catch (e) {}
-      $('writeBackRow').hidden = !ed.checked;
       renderCueList();
     });
     wb.addEventListener('change', function(){ try { localStorage.setItem('writeBack', wb.checked ? '1' : '0'); } catch (e) {} });
@@ -3174,6 +3187,7 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
       var what = r.kind === 'nosubs' ? 'Without subtitles' : 'With subtitles';
       $(c.title).textContent = r.clip ? 'Clip ' + r.clip.n + ' of ' + r.clip.of + ' · ' + what.toLowerCase() : what;
       $(c.name).textContent = r.name;
+      if (r.saved) $(c.save).textContent = 'Save again';
       setStatus($(c.status), (r.blob.size / 1048576).toFixed(1) + ' MB MP4 file' + r.note + '.' + (r.saved ? ' Already saved as ' + r.name + '.' : ''), kindStatus || 'ok');
       $(c.share).hidden = !canShareFiles; $(c.row).classList.toggle('single', !canShareFiles);
       // tweet text: on the clip's no-subtitle video, or on its only video
@@ -4024,17 +4038,20 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
     if (!dl){
       fallbackSave(r.url, r.name);
       setStatus(st, 'Saved as ' + r.name + '. Check your Downloads folder.', 'ok');
+      r.saved = true; $(CARDS[i].save).textContent = 'Save again';
       return;
     }
     try {
       await dl.save({ filename: r.name, data: r.blob });
       setStatus(st, 'Saved as ' + r.name + '.', 'ok');
+      r.saved = true; $(CARDS[i].save).textContent = 'Save again';
     } catch (err) {
       var code = err && err.code;
       if (code === 'declined') setStatus(st, 'Not saved. Tap Save video to try again.');
       else if (code === 'rate_limited') setStatus(st, 'A save prompt is already open. Finish that one first.', 'warn');
       else if (code === 'too_large') setStatus(st, 'This video is too large to save from the Claude app. Open this page in Chrome to save it, or make a shorter cut.', 'warn');
       else { fallbackSave(r.url, r.name); setStatus(st, 'Tried saving as ' + r.name + '. If it isn’t in your Downloads folder, open this page in Chrome and save from there.', 'warn'); }
+      r.saved = true; $(CARDS[i].save).textContent = 'Save again';
     }
   }
   // Save all: one after another, with a short pause, since browsers handle a quick row of
@@ -4097,7 +4114,7 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
     parts.forEach(function(p, k){
       var joined = k > 0 && cues[p.first] && cues[p.first].joinPrev;
       if (!joined) n++;
-      var li = document.createElement('li'); li.className = 'moment' + (joined ? ' joined' : '');
+      var li = document.createElement('li'); li.className = 'moment c' + ((n - 1) % 4) + (joined ? ' joined' : '');
       var head = document.createElement('div'); head.className = 'moment-head';
       head.textContent = (joined ? '+ also in clip ' : 'Clip ') + n + ' · ' + fmt(p.a) + '–' + fmt(p.b) + ' (' + fmt(p.b - p.a) + ')';
       var words = document.createElement('div'); words.className = 'moment-words';
@@ -4179,6 +4196,12 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
   });
   $('cueList').addEventListener('change', function(e){
     var t = e.target;
+    if (t.dataset && t.dataset.edit !== undefined){   // one line's Edit tick
+      if (burning) return;
+      var ce = cues[Number(t.dataset.edit)]; if (ce) ce.edit = t.checked;
+      renderCueList();
+      return;
+    }
     if (t.dataset && t.dataset.block !== undefined){   // "Keep block": all lines of that block
       if (burning) return;
       var kb = Number(t.dataset.block);
