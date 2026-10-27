@@ -216,6 +216,19 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
 .result-card .label{margin:0}
 .save-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .save-row.single{grid-template-columns:1fr}
+.seg.two{grid-template-columns:1fr 1fr}
+.moment-list{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:8px}
+.moment-list[hidden]{display:none}
+.moment-list li{padding:10px 12px;border:2px solid var(--line);border-radius:12px;background:var(--bg)}
+.moment-list li.joined{border-style:dashed}
+.moment-head{font-weight:700}
+.moment-words{color:var(--muted);font-size:16px;margin:2px 0 4px}
+.cue-list.locked .cue-text{pointer-events:none;color:var(--muted);background:transparent;border-color:transparent}
+.cue-note{margin:0 0 6px;font-size:15px;color:var(--warn)}
+.edit-row{display:flex;flex-wrap:wrap;gap:6px 18px;margin:6px 0 8px}
+.edit-row [hidden],#shiftRow[hidden]{display:none}
+.save-all{display:grid;gap:6px;margin-top:12px}
+.save-all[hidden]{display:none}
 .env-note{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px;margin:0 0 14px;padding:12px 14px;border-radius:14px;background:var(--accent-soft);color:var(--ink);font-size:16px;line-height:1.4}
 .env-note[hidden]{display:none}
 .env-note p{margin:0;flex:1 1 200px}
@@ -279,6 +292,11 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
     <p id="envText"></p>
     <button class="btn small" id="installBtn" type="button" hidden>Install</button>
     <button class="linkish" id="envClose" type="button">Hide</button>
+  </div>
+  <div class="env-note" id="restoreNote" role="status" hidden>
+    <p id="restoreText"></p>
+    <button class="btn small" id="restoreYes" type="button">Restore</button>
+    <button class="linkish" id="restoreNo" type="button">Start fresh</button>
   </div>
 
   <section class="stage" aria-label="Preview">
@@ -406,8 +424,12 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
     <p class="status" id="srtStatus">No subtitles yet.</p>
     <div id="autoReview" hidden>
       <p class="label" style="margin-top:16px">Your subtitles</p>
-      <p class="hint" style="margin:4px 0 8px">Tick Keep on the lines you want in a cut (step 4). Tap a line’s words to change them; its times stay as they are. Make timings starts over from the box above.</p>
-      <div class="row"><button class="btn" id="shiftEarlier" type="button">All 0.25 s earlier</button><button class="btn" id="shiftLater" type="button">All 0.25 s later</button></div>
+      <p class="hint" style="margin:4px 0 8px">Tick Keep on the lines you want in a cut (step 4). Tick Edit lines to change a line’s words or times. Make timings starts over from the box above.</p>
+      <div class="edit-row">
+        <label class="check"><input id="editLines" type="checkbox"> Edit lines</label>
+        <label class="check" id="writeBackRow" hidden><input id="writeBack" type="checkbox" checked> Also fix the pasted text</label>
+      </div>
+      <div class="row" id="shiftRow"><button class="btn" id="shiftEarlier" type="button">All 0.25 s earlier</button><button class="btn" id="shiftLater" type="button">All 0.25 s later</button></div>
       <ol class="cue-list" id="cueList"></ol>
       <div class="row"><button class="btn" id="copySrt" type="button">Copy as SRT</button></div>
     </div>
@@ -514,6 +536,14 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
   <section class="step" id="partsCard">
     <h2><span class="num">4</span>Parts</h2>
     <p class="status" id="partsSummary" style="margin-top:0">Whole video. Tick Keep on lines in step 2 to keep only those parts.</p>
+    <div id="clipBox" hidden>
+      <p class="label" id="clipLabel" style="margin-top:14px">Clips</p>
+      <div class="seg two" data-clkey="clips" role="group" aria-labelledby="clipLabel">
+        <button type="button" data-val="one" aria-pressed="true">One clip</button>
+        <button type="button" data-val="separate" aria-pressed="false">Separate clips</button>
+      </div>
+      <ol class="moment-list" id="momentList" hidden></ol>
+    </div>
     <p class="label" id="bufLabel" style="margin-top:14px">Extra time before and after each part</p>
     <div class="seg" data-ckey="buffer" role="group" aria-labelledby="bufLabel">
       <button type="button" data-val="0.25" aria-pressed="false">0.25 s</button>
@@ -541,6 +571,7 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
       <button type="button" data-val="nosubs" aria-pressed="false">Without</button>
       <button type="button" data-val="both" aria-pressed="false">Both</button>
     </div>
+    <label class="check" style="margin-top:8px"><input id="saveEach" type="checkbox"> Save each video as soon as it’s done</label>
     <button class="btn primary" id="burnBtn" type="button" disabled>Burn subtitles</button>
     <p class="hint" id="burnHint">Choose a video and subtitles first.</p>
 
@@ -562,26 +593,11 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
 
     <div class="result" id="result" hidden>
       <p class="big">Done. Check, then save.</p>
-      <div class="result-card">
-        <p class="label" id="resultTitle">With subtitles</p>
-        <video id="resultVideo" controls playsinline></video>
-        <p class="fname" id="resultName"></p>
-        <div class="save-row" id="saveRow">
-          <button class="btn primary" id="saveBtn" type="button">Save video</button>
-          <button class="btn" id="shareBtn" type="button" hidden>Share</button>
-        </div>
-        <p class="status" id="saveStatus"></p>
+      <div class="save-all" id="saveAllRow" hidden>
+        <button class="btn primary" id="saveAll" type="button">Save all</button>
+        <p class="status" id="saveAllStatus"></p>
       </div>
-      <div class="result-card" id="result2" hidden>
-        <p class="label" id="resultTitle2">Without subtitles</p>
-        <video id="resultVideo2" controls playsinline></video>
-        <p class="fname" id="resultName2"></p>
-        <div class="save-row" id="saveRow2">
-          <button class="btn primary" id="saveBtn2" type="button">Save video</button>
-          <button class="btn" id="shareBtn2" type="button" hidden>Share</button>
-        </div>
-        <p class="status" id="saveStatus2"></p>
-      </div>
+      <div id="resultList"></div>
     </div>
   </section>
 </main>
@@ -613,8 +629,8 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
 
   function fmt(sec){
     if (!isFinite(sec) || sec < 0) sec = 0;
-    var m = Math.floor(sec / 60), s = Math.floor(sec % 60);
-    return m + ':' + (s < 10 ? '0' : '') + s;
+    var h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = Math.floor(sec % 60);
+    return (h ? h + ':' + (m < 10 ? '0' : '') : '') + m + ':' + (s < 10 ? '0' : '') + s;
   }
   function setStatus(el, text, kind){ el.textContent = text; el.className = 'status' + (kind ? ' ' + kind : ''); }
   function once(el, ev){ return new Promise(function(res){ el.addEventListener(ev, res, { once: true }); }); }
@@ -647,11 +663,11 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
     }
     if (cur) out.push(cur);
     var good = [];
-    out.forEach(function(c){
+    out.forEach(function(c, k){
       var text = stripTags(c.lines.join('\n'));
       if (!text) return;
       if (!(c.end > c.start)){ bad++; return; }
-      good.push({ start: c.start, end: c.end, text: text });
+      good.push({ start: c.start, end: c.end, text: text, n: k });
     });
     good.sort(function(a, b){ return a.start - b.start; });
     return { cues: good, bad: bad };
@@ -1310,6 +1326,7 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
     previewSize();
     hasVideo = true;
     setStatus($('videoStatus'), videoName + ', ' + fmt(video.duration) + ' long, ' + vw + ' × ' + vh + '.', 'ok');
+    checkSessionVideo();
     $('playBtn').disabled = false; $('scrub').disabled = false; $('miniPlay').disabled = false; $('miniScrub').disabled = false;
     video.currentTime = recoverAt !== null ? Math.min(recoverAt, video.duration || 0) : Math.min(0.05, video.duration || 0);
     recoverAt = null;
@@ -1338,14 +1355,11 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
     }
     video.src = videoURL; video.load();
   }
-  $('resultVideo').addEventListener('pause', function(){ if (recoverPending) recoverPreview(); });
-  $('resultVideo').addEventListener('ended', function(){ if (recoverPending) recoverPreview(); });
-  $('resultVideo2').addEventListener('pause', function(){ if (recoverPending) recoverPreview(); });
-  $('resultVideo2').addEventListener('ended', function(){ if (recoverPending) recoverPreview(); });
+  ['pause', 'ended'].forEach(function(ev){ $('resultList').addEventListener(ev, function(){ if (recoverPending) recoverPreview(); }, true); });
   video.addEventListener('error', function(){
     if (previewReleased || burning) return;   // the burn let go of the preview on purpose
     if (hasVideo && videoURL && recoverTries < 3){
-      if (!$('resultVideo').paused || !$('resultVideo2').paused) recoverPending = true;   // don't take the hardware from the result player
+      if (resultPlaying()) recoverPending = true;   // don't take the hardware from the result player
       else if (playCheck) recoverPreview(playFrom, true);   // a Play tap was waiting on it: play once it's back
       else recoverPreview();
       return;
@@ -1357,7 +1371,7 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
   // Back from another app (the gallery, say): if the phone shut the preview player meanwhile, reopen it now.
   document.addEventListener('visibilitychange', function(){
     if (document.hidden || burning || !hasVideo || previewReleased) return;
-    if ((video.error || recoverPending) && $('resultVideo').paused && $('resultVideo2').paused) recoverPreview();
+    if ((video.error || recoverPending) && !resultPlaying()) recoverPreview();
   });
 
   /* ---------- Preview transport ---------- */
@@ -1411,7 +1425,7 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
     if (typeof at !== 'number') at = video.currentTime || 0;
     function stuck(t){
       if (retried) return playTrouble();
-      $('resultVideo').pause(); $('resultVideo2').pause();   // free the hardware for the preview
+      pauseResults();   // free the hardware for the preview
       recoverPreview(t, true);
     }
     if (recoverPending || video.error) return stuck(at);
@@ -1442,6 +1456,7 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
         : 'No subtitle timings found in ' + source + '. Each subtitle needs a line like 00:00:04,000 --> 00:00:07,000.', 'warn');
     } else {
       cues = r.cues; geminiBlocks = [];
+      cues.forEach(function(c){ c.src = { box: 'srt', n: c.n }; c.srcText = c.text; });
       var last = cues[cues.length - 1].end;
       var msg = 'Found ' + cues.length + ' subtitle' + (cues.length === 1 ? '' : 's') + ', ending at ' + fmt(last) + '.';
       if (r.bad) msg += ' Skipped ' + r.bad + ' with an end time before its start time.';
@@ -1465,7 +1480,7 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
     var f = e.target.files && e.target.files[0];
     if (!f) return;
     var reader = new FileReader();
-    reader.onload = function(){ loadSubs(String(reader.result), f.name); };
+    reader.onload = function(){ $('pasteArea').value = String(reader.result); loadSubs(String(reader.result), f.name); };
     reader.onerror = function(){ setStatus($('srtStatus'), 'That file couldn’t be read. Try choosing it again.', 'warn'); };
     reader.readAsText(f);
     e.target.value = '';
@@ -1551,6 +1566,99 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
     return rendered.getChannelData(0);             // Float32Array, 16000 samples per second
   }
 
+  /* Long videos: the sound is read and decoded a little at a time and boiled down straight
+     away to the three loudness tracks speech finding uses, so memory stays small whatever
+     the length (an hour of 16 kHz sound is 230 MB as samples, 1.4 MB as tracks). Videos up
+     to LONG_SOUND keep the exact earlier way (decodeAudio16k), so their timings don't move. */
+  var LONG_SOUND = 15 * 60, forceLongSound = false;   // forceLongSound: tests only
+  function dbStream(){
+    // biquad() as a running filter: same maths, one sample at a time
+    function filt(type, freq){
+      var w = 2 * Math.PI * freq / 16000, cs = Math.cos(w), al = Math.sin(w) / (2 * Math.SQRT1_2), b0, b1;
+      if (type === 'hp'){ b0 = (1 + cs) / 2; b1 = -(1 + cs); } else { b0 = (1 - cs) / 2; b1 = 1 - cs; }
+      var a0 = 1 + al, a1 = -2 * cs, a2 = 1 - al, x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+      return function(x){ var o = (b0 * x + b1 * x1 + b0 * x2 - a1 * y1 - a2 * y2) / a0; x2 = x1; x1 = x; y2 = y1; y1 = o; return o; };
+    }
+    var hp150 = filt('hp', 150), lp1000 = filt('lp', 1000), hp3000 = filt('hp', 3000);
+    var out = { full: [], vdb: [], hdb: [] }, sf = 0, sv = 0, sh = 0, k = 0;
+    function db(sum){ return 10 * Math.log10(sum / FRAME + 1e-10); }
+    return {
+      push: function(x){   // one 16 kHz sample
+        var v = lp1000(hp150(x)), h = hp3000(x);
+        sf += x * x; sv += v * v; sh += h * h;
+        if (++k === FRAME){ out.full.push(db(sf)); out.vdb.push(db(sv)); out.hdb.push(db(sh)); sf = sv = sh = 0; k = 0; }
+      },
+      result: function(){ return out; }
+    };
+  }
+  // Mixes to one channel and brings any sample rate down to 16 kHz by averaging (enough for
+  // loudness tracks), carrying a part-filled sample over from one piece to the next.
+  function to16k(rate, sink){
+    var step = rate / 16000, pos = 0, acc = 0, cnt = 0;
+    return function(planes, frames){
+      var ch = planes.length;
+      for (var i = 0; i < frames; i++){
+        var s = 0;
+        for (var c = 0; c < ch; c++) s += planes[c][i];
+        acc += s / ch; cnt++;
+        if (++pos >= step){ pos -= step; sink(acc / cnt); acc = 0; cnt = 0; }
+      }
+    };
+  }
+  // The loudness tracks of the video's own sound track, read piece by piece.
+  // onProgress(seconds done, seconds in total) is called about every 30 s of sound.
+  async function speechDbLong(file, onProgress){
+    var src = await MP4.parse(file);
+    var at = src.tracks.filter(function(t){ return t.handler === 'soun' && t.samples.length; })[0];
+    if (!at) throw new Error('no sound track');
+    var ac = MP4.audioConfig(at.stsd);
+    if (!ac || !('AudioDecoder' in window && 'EncodedAudioChunk' in window)) throw new Error('can’t decode this sound here');
+    var dcfg = { codec: 'mp4a.40.' + ac.aot, sampleRate: ac.rate, numberOfChannels: ac.channels, description: ac.asc };
+    var sup = null;
+    try { sup = await AudioDecoder.isConfigSupported(dcfg); } catch (e) {}
+    if (!sup || !sup.supported) throw new Error('can’t decode this sound here');
+    var stream = dbStream(), feed = to16k(ac.rate, stream.push), failed = null;
+    var aS = at.samples, total = aS.reduce(function(a, s){ return a + s.dur; }, 0) / at.ts, t = 0, shown = 0;
+    var dec = new AudioDecoder({
+      output: function(ad){
+        try {
+          var planes = [];
+          for (var c = 0; c < ad.numberOfChannels; c++){
+            var a = new Float32Array(ad.numberOfFrames);
+            ad.copyTo(a, { planeIndex: c, format: 'f32-planar' });
+            planes.push(a);
+          }
+          feed(planes, ad.numberOfFrames);
+        } catch (e) { failed = failed || e; }
+        finally { ad.close(); }
+      },
+      error: function(e){ failed = failed || e; }
+    });
+    dec.configure(dcfg);
+    for (var i = 0; i < aS.length && !failed; ){
+      // one read covers neighbouring pieces: gaps up to 256 KB (video between them) are
+      // read through, larger gaps start a new read; at most 4 MB per read
+      var rs = aS[i].off, re = rs + aS[i].size, j = i + 1;
+      while (j < aS.length && aS[j].off >= re && aS[j].off - re <= 262144 && aS[j].off + aS[j].size - rs <= 4 * 1048576){ re = aS[j].off + aS[j].size; j++; }
+      var buf = new Uint8Array(await file.slice(rs, re).arrayBuffer());
+      for (var k = i; k < j && !failed; k++){
+        while (dec.decodeQueueSize > 32 && !failed) await new Promise(function(r){ setTimeout(r, 5); });
+        dec.decode(new EncodedAudioChunk({ type: 'key', timestamp: Math.round(t * 1e6 / at.ts),
+          data: buf.subarray(aS[k].off - rs, aS[k].off - rs + aS[k].size) }));
+        t += aS[k].dur;
+      }
+      i = j;
+      if (onProgress && t / at.ts - shown >= 30){
+        shown = t / at.ts; onProgress(shown, total);
+        await new Promise(function(r){ setTimeout(r, 0); });   // let the page draw the progress
+      }
+    }
+    if (!failed){ try { await dec.flush(); } catch (e) { failed = e; } }
+    try { dec.close(); } catch (e) {}
+    if (failed) throw failed;
+    return stream.result();
+  }
+
   var FRAME = 480; // 30 ms at 16 kHz
   function percentile(arr, q){
     var s = arr.slice().sort(function(a, b){ return a - b; });
@@ -1603,16 +1711,21 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
     });
     return out;
   }
-  function findSpeech(samples, duration){
-    var n = Math.floor(samples.length / FRAME), fs = FRAME / 16000;
+  // The three loudness tracks speech finding works on, one value per 30 ms frame.
+  function speechDb(samples){
+    return { full: frameDb(samples), vdb: frameDb(biquad(biquad(samples, 'hp', 150), 'lp', 1000)), hdb: frameDb(biquad(samples, 'hp', 3000)) };
+  }
+  function findSpeech(samples, duration){ return findSpeechDb(speechDb(samples), duration); }
+  function findSpeechDb(d, duration){
+    var n = d.full.length, fs = FRAME / 16000;
     if (n < 2) return [{ start: 0, end: duration }];
     // 1. Loudness of the full sound: good at finding where speech ends (soft word endings included)
-    var full = detectRegions(frameDb(samples), duration);
+    var full = detectRegions(d.full, duration);
     // 2. Loudness in the voice range only: tells real speech apart from clinks and clicks
-    var vdb = frameDb(biquad(biquad(samples, 'hp', 150), 'lp', 1000));
+    var vdb = d.vdb;
     var level = percentile(vdb, 0.95);
     // High-pitched loudness (above 3 kHz): clinks are strong here, voices much less so
-    var hdb = frameDb(biquad(samples, 'hp', 3000));
+    var hdb = d.hdb;
     function voiceLed(i){ return vdb[i] - hdb[i] > VOICE_RATIO; }
     var voice = [];
     detectRegions(vdb, duration).forEach(function(r){
@@ -2237,13 +2350,19 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
       }
       if (!gBlocks.length && !lines.length){ setStatus(st, 'No text found to time.', 'warn'); return; }
       setStatus(st, duration > 300 ? 'Reading the sound… long clips take a while.' : 'Reading the sound…');
-      var samples;
-      try { samples = await decodeAudio16k(videoFile, ac); }
-      catch (e) { setStatus(st, 'Couldn’t read the sound in this video. Try an MP4.', 'warn'); return; }
-      finally { try { ac.close(); } catch (e) {} }
+      var samples = null, dbs = null;
+      if (duration > LONG_SOUND || forceLongSound){
+        try { ac.close(); } catch (e) {}
+        try { dbs = await speechDbLong(videoFile, function(done, total){ setStatus(st, 'Reading the sound… ' + Math.floor(done / 60) + ' of ' + Math.ceil(total / 60) + ' min'); }); }
+        catch (e) { console.warn('Reading a long sound track failed:', e); setStatus(st, 'Couldn’t read the sound of this long video here. For long videos, use timed subtitles (an SRT) instead.', 'warn'); return; }
+      } else {
+        try { samples = await decodeAudio16k(videoFile, ac); }
+        catch (e) { setStatus(st, 'Couldn’t read the sound in this video. Try an MP4.', 'warn'); return; }
+        finally { try { ac.close(); } catch (e) {} }
+      }
       setStatus(st, 'Finding speech…');
       await new Promise(function(r){ setTimeout(r, 30); });
-      var regions = findSpeech(samples, duration);
+      var regions = dbs ? findSpeechDb(dbs, duration) : findSpeech(samples, duration);
       var segments = null;
       /* PHASE 2 ONLY: if ($('autoWhisper').checked) segments = await runWhisper(samples, duration, regions); */
       // Gemini's timed blocks: each block's lines are timed inside its own window
@@ -2251,6 +2370,7 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
       geminiBlocks = gBlocks;
       stopEditing();
       cues = res.cues;
+      anchorAuto($('autoText').value, cues);
       updateLookAdj();
       var msg = gBlocks.length ? 'Timed ' + cues.length + ' subtitles inside ' + gBlocks.length + ' Gemini block' + (gBlocks.length === 1 ? '' : 's') + '.'
         : 'Timed ' + cues.length + ' subtitles' + (segments ? ', ' + res.anchors + ' pinned by matching words.' : ' by line length.');
@@ -2262,21 +2382,27 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
     } finally { autoBusy = false; $('autoRun').disabled = false; }
   });
 
-  function fmtPrecise(sec){ var m = Math.floor(sec / 60), s = sec - m * 60; return m + ':' + (s < 10 ? '0' : '') + s.toFixed(1); }
+  function fmtPrecise(sec){ var h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = sec - h * 3600 - m * 60; return (h ? h + ':' + (m < 10 ? '0' : '') : '') + m + ':' + (s < 10 ? '0' : '') + s.toFixed(1); }
   function cueTimeLabel(c){ return fmtPrecise(c.start) + ' – ' + fmtPrecise(c.end) + (c.warn ? ' · very quick to read' : ''); }
   // The words of each line are editable in place; editing never touches the line's times.
   var AUTO_FIT = !(window.CSS && CSS.supports && CSS.supports('field-sizing', 'content'));
   function fitBox(t){ if (!AUTO_FIT || !t.offsetParent) return; t.style.height = 'auto'; t.style.height = (t.scrollHeight + 2) + 'px'; }
+  // Lines are locked (grey, no keyboard, only Play) until "Edit lines" is ticked, so
+  // scrolling through a long list can't catch them.
   function renderCueList(){
-    var list = $('cueList'); list.innerHTML = '';
+    var list = $('cueList'), editing = $('editLines').checked;
+    list.textContent = '';
+    list.classList.toggle('locked', !editing);
+    $('shiftRow').hidden = !editing;
     cues.forEach(function(c, i){
       if (c.block !== undefined && (i === 0 || cues[i - 1].block !== c.block)) list.appendChild(blockHead(c.block));
       var li = document.createElement('li'); li.className = 'cue-row' + (c.warn ? ' warn' : '') + (c.use ? ' kept' : '');
       var time = document.createElement('div'); time.className = 'cue-time'; time.textContent = cueTimeLabel(c);
       var tx = document.createElement('textarea'); tx.className = 'cue-text'; tx.value = c.text; tx.rows = 1;
       tx.dataset.i = String(i); tx.disabled = burning; tx.setAttribute('aria-label', 'Words of subtitle ' + (i + 1));
+      if (!editing){ tx.readOnly = true; tx.tabIndex = -1; }
       var btns = document.createElement('div'); btns.className = 'cue-btns';
-      [['Play', 'play'], ['Start = now', 'setStart'], ['End = now', 'setEnd'], ['−0.25 s', 'earlier'], ['+0.25 s', 'later']].forEach(function(b){
+      (editing ? [['Play', 'play'], ['Start = now', 'setStart'], ['End = now', 'setEnd'], ['−0.25 s', 'earlier'], ['+0.25 s', 'later']] : [['Play', 'play']]).forEach(function(b){
         var el = document.createElement('button'); el.type = 'button'; el.textContent = b[0];
         el.dataset.act = b[1]; el.dataset.i = String(i); btns.appendChild(el);
       });
@@ -2286,16 +2412,109 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
       cb.setAttribute('aria-label', 'Keep line ' + (i + 1) + ' in the cut');
       use.appendChild(cb); use.appendChild(document.createTextNode('Keep'));
       head.appendChild(use); head.appendChild(time);
-      li.appendChild(head); li.appendChild(tx); li.appendChild(btns); list.appendChild(li);
+      li.appendChild(head); li.appendChild(tx);
+      if (c.wbMiss){ var note = document.createElement('p'); note.className = 'cue-note'; note.textContent = WB_MISS; li.appendChild(note); }
+      li.appendChild(btns); list.appendChild(li);
       fitBox(tx);
     });
     updateFontGaps();
   }
+  /* ---------- Writing line edits back into the pasted text ----------
+     Each line remembers where its words came from: an entry of the SRT in the Paste SRT box
+     (c.src = { box: 'srt', n: which "-->" line }) or a place in the Automatic timing box
+     (c.src = { box: 'auto', at: character position, -1 if not found }). c.srcText is the
+     text the box has there. With "Also fix the pasted text" on, changing a line's words (and
+     for SRT its times) rewrites that place. If the box no longer has the old words there,
+     nothing is overwritten and the line says so (c.wbMiss). */
+  var WB_MISS = 'Not found in the pasted text, so it’s only changed here.';
+  var wbTimer = null, wbPending = [];
+  function escRe(s){ return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+  // the words, with any run of spaces or line breaks matching any other run
+  function looseRe(s){ return new RegExp(s.trim().split(/\s+/).map(escRe).join('\\s+'), 'g'); }
+  // After Make timings: find each line's words in the box, in order.
+  function anchorAuto(text, list){
+    var from = 0;
+    list.forEach(function(c){
+      c.srcText = c.text; c.wbMiss = false;
+      if (!c.text.trim()){ c.src = { box: 'auto', at: -1 }; return; }
+      var re = looseRe(c.text); re.lastIndex = from;
+      var m = re.exec(text);
+      c.src = { box: 'auto', at: m ? m.index : -1 };
+      if (m) from = m.index + m[0].length;
+    });
+  }
+  function writeAuto(c){
+    if (c.src.at < 0 || !c.srcText.trim()) return false;
+    var box = $('autoText'), text = box.value, re = looseRe(c.srcText), m, best = null;
+    while ((m = re.exec(text))){
+      if (!best || Math.abs(m.index - c.src.at) < Math.abs(best.index - c.src.at)) best = { index: m.index, len: m[0].length };
+      if (re.lastIndex === m.index) re.lastIndex++;
+    }
+    if (!best) return false;
+    box.value = text.slice(0, best.index) + c.text + text.slice(best.index + best.len);
+    var shift = c.text.length - best.len;
+    cues.forEach(function(o){ if (o !== c && o.src && o.src.box === 'auto' && o.src.at > best.index) o.src.at += shift; });
+    c.src.at = best.index; c.srcText = c.text;
+    return true;
+  }
+  // The n-th "-->" line of the SRT box and the text lines under it (up to a blank line).
+  function srtEntry(lines, n){
+    var k = -1;
+    for (var i = 0; i < lines.length; i++){
+      if (!ARROW.test(lines[i]) || ++k !== n) continue;
+      var j = i + 1;
+      while (j < lines.length && lines[j].trim() !== '') j++;
+      return { arrow: i, from: i + 1, to: j };
+    }
+    return null;
+  }
+  function writeSrt(c){
+    var box = $('pasteArea'), lines = box.value.replace(/\r\n?/g, '\n').split('\n'), e = srtEntry(lines, c.src.n);
+    if (!e) return false;
+    var old = stripTags(lines.slice(e.from, e.to).map(function(l){ return l.trim(); }).join('\n'));
+    if (old !== c.srcText) return false;
+    var words = c.text.split('\n').map(function(l){ return l.trim(); }).filter(Boolean);
+    Array.prototype.splice.apply(lines, [e.from, e.to - e.from].concat(words));
+    lines[e.arrow] = srtTime(c.start) + ' --> ' + srtTime(c.end);
+    box.value = lines.join('\n');
+    c.srcText = words.join('\n');
+    return true;
+  }
+  function markMiss(c){
+    var tx = document.querySelector('#cueList .cue-text[data-i="' + cues.indexOf(c) + '"]'); if (!tx) return;
+    var li = tx.closest('.cue-row'), note = li.querySelector('.cue-note');
+    if (c.wbMiss && !note){ note = document.createElement('p'); note.className = 'cue-note'; note.textContent = WB_MISS; tx.after(note); }
+    if (!c.wbMiss && note) note.remove();
+  }
+  function writeBack(c){
+    if (!$('writeBack').checked || !c || !c.src || cues.indexOf(c) < 0) return;
+    var ok = c.src.box === 'srt' ? writeSrt(c) : writeAuto(c);
+    if (ok && c.src.box === 'auto') updateGeminiNote();
+    c.wbMiss = !ok; markMiss(c);
+  }
+  // Typing: write back once the typing pauses (every line changed meanwhile).
+  function writeBackSoon(c){
+    if (wbPending.indexOf(c) < 0) wbPending.push(c);
+    clearTimeout(wbTimer);
+    wbTimer = setTimeout(function(){ var l = wbPending; wbPending = []; l.forEach(writeBack); }, 400);
+  }
+  (function(){
+    var ed = $('editLines'), wb = $('writeBack');
+    try { ed.checked = localStorage.getItem('editLines') === '1'; wb.checked = localStorage.getItem('writeBack') !== '0'; } catch (e) {}
+    $('writeBackRow').hidden = !ed.checked;
+    ed.addEventListener('change', function(){
+      try { localStorage.setItem('editLines', ed.checked ? '1' : '0'); } catch (e) {}
+      $('writeBackRow').hidden = !ed.checked;
+      renderCueList();
+    });
+    wb.addEventListener('change', function(){ try { localStorage.setItem('writeBack', wb.checked ? '1' : '0'); } catch (e) {} });
+  })();
   $('cueList').addEventListener('input', function(e){
     var t = e.target;
     if (!t.classList.contains('cue-text') || burning) return;
     var c = cues[Number(t.dataset.i)]; if (!c) return;
     c.text = t.value; c.chars = countChars(t.value);
+    writeBackSoon(c);
     updateFontGapsSoon();
     var dur = c.end - c.start; c.warn = dur < 0.8 || c.chars / dur > 25;
     var li = t.closest('.cue-row'); li.classList.toggle('warn', c.warn);
@@ -2326,7 +2545,9 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
     if (act === 'setEnd') c.end = t;
     if (act === 'earlier'){ c.start -= 0.25; c.end -= 0.25; }
     if (act === 'later'){ c.start += 0.25; c.end += 0.25; }
-    fixCue(i); renderCueList(); redraw(); updateParts();
+    fixCue(i);
+    [i - 1, i, i + 1].forEach(function(k){ var o = cues[k]; if (o && o.src && o.src.box === 'srt') writeBackSoon(o); });
+    renderCueList(); redraw(); updateParts();
   });
   function shiftAll(delta){
     if (!cues.length) return;
@@ -2334,6 +2555,7 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
     var d = video.duration || Infinity;
     cues.forEach(function(c){ c.start = Math.round((c.start + delta) * 100) / 100; c.end = Math.min(d, Math.round((c.end + delta) * 100) / 100); });
     renderCueList(); redraw(); updateParts();
+    cues.forEach(function(c){ if (c.src && c.src.box === 'srt') writeBackSoon(c); });
   }
   $('shiftEarlier').addEventListener('click', function(){ shiftAll(-0.25); });
   $('shiftLater').addEventListener('click', function(){ shiftAll(0.25); });
@@ -2839,7 +3061,10 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
   function updateBurnState(){
     var ready = hasVideo && cues.length > 0, cutting = cues.some(function(c){ return c.use; });
     $('burnBtn').disabled = !ready || burning;
-    $('burnBtn').textContent = !cutting ? 'Burn subtitles' : makeChoice === 'both' ? 'Make both videos' : makeChoice === 'nosubs' ? 'Make the cut without subtitles' : 'Make the cut with subtitles';
+    var nClips = cutting && clipMode === 'separate' ? momentsOf(partsFromTicks()).length : 1, both = makeChoice === 'both';
+    $('burnBtn').textContent = !cutting ? 'Burn subtitles'
+      : nClips > 1 ? 'Make ' + nClips * (both ? 2 : 1) + ' videos (' + nClips + ' clips, ' + (both ? 'with and without subtitles' : makeChoice === 'nosubs' ? 'without subtitles' : 'with subtitles') + ')'
+      : both ? 'Make both videos' : makeChoice === 'nosubs' ? 'Make the cut without subtitles' : 'Make the cut with subtitles';
     $('burnHint').textContent = !ready ? 'Choose a video and subtitles first.'
       : cutting ? 'Cuts out the ticked parts and joins them, frame by frame. Keep this screen open until it’s done.'
       : 'Works through the video frame by frame and keeps the original sound. Keep this screen open until it’s done.';
@@ -2847,11 +3072,11 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
   function setBusy(on){
     if (on) stopEditing();
     burning = on;
-    ['videoInput', 'videoInput2', 'srtInput', 'pasteUse', 'pasteToggle', 'playBtn', 'miniPlay', 'scrub', 'miniScrub', 'autoToggle', 'autoText', 'autoWhisper', 'autoRun', 'shiftEarlier', 'shiftLater', 'copySrt', 'whisperFiles', 'playCut', 'untickAll', 'copyTweet', 'tweetText', 'tweetRefresh', 'cropBtn', 'autoPaste', 'srtPaste', 'toLang', 'toLangName', 'copyRequest'].forEach(function(id){ $(id).disabled = on; });
+    ['videoInput', 'videoInput2', 'srtInput', 'pasteUse', 'pasteToggle', 'playBtn', 'miniPlay', 'scrub', 'miniScrub', 'autoToggle', 'autoText', 'autoWhisper', 'autoRun', 'shiftEarlier', 'shiftLater', 'copySrt', 'whisperFiles', 'playCut', 'untickAll', 'copyTweet', 'tweetText', 'tweetRefresh', 'cropBtn', 'autoPaste', 'srtPaste', 'toLang', 'toLangName', 'copyRequest', 'editLines', 'writeBack', 'saveEach'].forEach(function(id){ $(id).disabled = on; });
     $('videoBtn').classList.toggle('disabled', on);
     $('videoBtn2').classList.toggle('disabled', on);
     $('srtBtn').classList.toggle('disabled', on);
-    Array.prototype.forEach.call(document.querySelectorAll('.seg button, .cue-text, .cue-use input, .block-head input, .style-ui button, .style-ui input'), function(b){ b.disabled = on; });
+    Array.prototype.forEach.call(document.querySelectorAll('.seg button, .cue-text, .cue-use input, .block-head input, .style-ui button, .style-ui input, .moment-list input'), function(b){ b.disabled = on; });
     $('burnBtn').hidden = on;
     $('burnHint').hidden = on;
     $('progress').hidden = !on;
@@ -2898,35 +3123,68 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
   }
 
   /* ---------- Results ----------
-     Up to two finished videos (with and without subtitles), each with its own player,
-     file name and Save button. */
-  var results = [];   // [{ blob, url, name, kind, note }]
-  var CARDS = [
-    { box: null, title: 'resultTitle', video: 'resultVideo', name: 'resultName', save: 'saveBtn', status: 'saveStatus', share: 'shareBtn', row: 'saveRow' },
-    { box: 'result2', title: 'resultTitle2', video: 'resultVideo2', name: 'resultName2', save: 'saveBtn2', status: 'saveStatus2', share: 'shareBtn2', row: 'saveRow2' }
-  ];
+     One card per finished video (with and without subtitles, for each clip), each with its
+     own player, file name, Save and Share buttons. The cards keep the ids earlier versions
+     used: card 1 resultVideo, saveBtn, saveRow…; card 2 resultVideo2, saveBtn2, result2… */
+  var results = [];   // [{ blob, url, name, kind, note, clip: { n, of } | null, cueIdx: { first, last } | null }]
+  var CARDS = [];
+  function cardIds(i){
+    var s = i ? String(i + 1) : '';
+    return { box: 'result' + (i + 1), title: 'resultTitle' + s, video: 'resultVideo' + s, name: 'resultName' + s, save: 'saveBtn' + s,
+             status: 'saveStatus' + s, share: 'shareBtn' + s, row: 'saveRow' + s, tweet: 'tweetBtn' + s };
+  }
+  function makeCard(i){
+    var c = cardIds(i), box = document.createElement('div');
+    box.className = 'result-card'; box.id = c.box;
+    box.innerHTML = '<p class="label" id="' + c.title + '"></p>' +
+      '<video id="' + c.video + '" controls playsinline></video>' +
+      '<p class="fname" id="' + c.name + '"></p>' +
+      '<div class="save-row" id="' + c.row + '"><button class="btn primary" id="' + c.save + '" type="button">Save video</button>' +
+      '<button class="btn" id="' + c.share + '" type="button" hidden></button></div>' +
+      '<button class="btn small" id="' + c.tweet + '" type="button" hidden>Copy this clip’s tweet text</button>' +
+      '<p class="status" id="' + c.status + '"></p>';
+    $('resultList').appendChild(box);
+    $(c.share).textContent = env.ios ? 'Save to Photos' : 'Share';
+    $(c.save).addEventListener('click', function(){ saveResult(i); });
+    $(c.share).addEventListener('click', function(){ shareResult(i); });
+    $(c.tweet).addEventListener('click', function(){ copyClipTweet(i); });
+    return c;
+  }
+  // The result players, for the preview's "don't take the hardware" checks.
+  function resultVideos(){ return Array.prototype.slice.call(document.querySelectorAll('#resultList video')); }
+  function resultPlaying(){ return resultVideos().some(function(v){ return !v.paused; }); }
+  function pauseResults(){ resultVideos().forEach(function(v){ v.pause(); }); }
   function clearResult(){
-    $('result').hidden = true; $('result2').hidden = true;
+    $('result').hidden = true;
     results.forEach(function(r){ if (r.url) URL.revokeObjectURL(r.url); });
-    results = [];
-    CARDS.forEach(function(c){ $(c.video).removeAttribute('src'); });
+    resultVideos().forEach(function(v){ v.removeAttribute('src'); try { v.load(); } catch (e) {} });
+    results = []; CARDS = [];
+    $('resultList').textContent = '';
+    $('saveAllRow').hidden = true; setStatus($('saveAllStatus'), '');
     resultBlob = null; resultURL = null;
   }
   function showResults(list, kindStatus){
-    results = list;
-    list.slice(0, CARDS.length).forEach(function(r, i){
-      var c = CARDS[i];
+    results = list; CARDS = [];
+    $('resultList').textContent = '';
+    list.forEach(function(r, i){
+      var c = makeCard(i); CARDS.push(c);
       r.url = URL.createObjectURL(r.blob);
+      if (list.length > 2) $(c.video).preload = 'none';   // many players: each loads only when played
       $(c.video).src = r.url;
-      $(c.title).textContent = r.kind === 'nosubs' ? 'Without subtitles' : 'With subtitles';
+      var what = r.kind === 'nosubs' ? 'Without subtitles' : 'With subtitles';
+      $(c.title).textContent = r.clip ? 'Clip ' + r.clip.n + ' of ' + r.clip.of + ' · ' + what.toLowerCase() : what;
       $(c.name).textContent = r.name;
-      setStatus($(c.status), (r.blob.size / 1048576).toFixed(1) + ' MB MP4 file' + r.note + '.', kindStatus || 'ok');
-      if (c.box) $(c.box).hidden = false;
+      setStatus($(c.status), (r.blob.size / 1048576).toFixed(1) + ' MB MP4 file' + r.note + '.' + (r.saved ? ' Already saved as ' + r.name + '.' : ''), kindStatus || 'ok');
       $(c.share).hidden = !canShareFiles; $(c.row).classList.toggle('single', !canShareFiles);
+      // tweet text: on the clip's no-subtitle video, or on its only video
+      var twin = list.some(function(o){ return o !== r && o.clip && r.clip && o.clip.n === r.clip.n && o.kind === 'nosubs'; });
+      $(c.tweet).hidden = !r.cueIdx || (r.kind !== 'nosubs' && twin);
     });
+    $('saveAllRow').hidden = list.length < 2;
     $('result').hidden = false;
     $('result').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
+
   // the real-time fallback still hands over one result the old way
   function showResult(note, kind){
     var name = outName('subs', false, 0).replace(/\.mp4$/, '.' + resultExt);
@@ -3491,12 +3749,18 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
     for (var k in PRESET_TAGS) if (PRESETS[k] && sameStyle(style, PRESETS[k])) return PRESET_TAGS[k];
     return 'custom-' + style.font;
   }
-  function outName(kind, cut, seconds){
+  function nameStamp(){
     var d = new Date(), two = function(n){ return (n < 10 ? '0' : '') + n; };
-    var stamp = d.getFullYear() + '-' + two(d.getMonth() + 1) + '-' + two(d.getDate()) + '_' + two(d.getHours()) + '-' + two(d.getMinutes()) + '-' + two(d.getSeconds());
+    return d.getFullYear() + '-' + two(d.getMonth() + 1) + '-' + two(d.getDate()) + '_' + two(d.getHours()) + '-' + two(d.getMinutes()) + '-' + two(d.getSeconds());
+  }
+  // <video>_[clip-2of4_]<cut-1m05s|full>_<subs-<style>|nosubs>_<date>_<time>.mp4
+  // clip: { n, of } or null; stamp: one date-time shared by every video of a burn
+  function outName(kind, cut, seconds, clip, stamp){
+    var two = function(n){ return (n < 10 ? '0' : '') + n; };
     var s = Math.round(seconds || 0), len = cut ? 'cut-' + (s >= 60 ? Math.floor(s / 60) + 'm' + two(s % 60) + 's' : s + 's') : 'full';
     var base = (videoName || 'video').replace(/[^\p{L}\p{N}_-]+/gu, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'video';
-    return base + '_' + len + '_' + (kind === 'nosubs' ? 'nosubs' : 'subs-' + styleTag()) + '_' + stamp + '.mp4';
+    return base + '_' + (clip ? 'clip-' + clip.n + 'of' + clip.of + '_' : '') + len + '_' +
+      (kind === 'nosubs' ? 'nosubs' : 'subs-' + styleTag()) + '_' + (stamp || nameStamp()) + '.mp4';
   }
 
   function restorePreviewSize(){ previewSize(); }
@@ -3551,7 +3815,10 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
       console.warn('Frame-by-frame burn unavailable:', why);
       return burnRealtime(why);
     }
-    plan.segs = planSegments(plan, parts);
+    // Separate clips: each clip (a part, or parts joined) becomes its own video(s).
+    var groups = cut && clipMode === 'separate' && parts.length >= 2 ? momentsOf(parts) : [{ parts: parts, first: -1, last: -1 }];
+    var many = groups.length > 1;
+    plan.segs = planSegments(plan, groups[0].parts);
     if (!plan.segs.list.length){ $('burnHint').textContent = 'The ticked lines are outside the video. Check their times.'; return; }
     var kinds = make === 'both' ? ['subs', 'nosubs'] : [make];
 
@@ -3561,38 +3828,47 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
     $('progLeft').textContent = 'Starting… Keep this screen open until it’s done.';
     releasePreview();
     await requestWake();
-    var store = soundStore(plan.at), made = [], tries = [], vi = 0, failed = false, results = [];
-    for (var kk = 0; kk < kinds.length && !cancelled && !failed; kk++){
-      var res = null, label = kinds.length > 1 ? 'Video ' + (kk + 1) + ' of ' + kinds.length + '…' : 'Burning…';
-      for (; vi < plan.variants.length && !res && !cancelled; vi++){
-        var v = plan.variants[vi];
-        if (tries.length) $('progLeft').textContent = 'Trying again with different settings…';
-        try { res = await burnFrames(plan, v, kinds[kk], store, label); }
-        catch (e){
-          if (cancelled) break;
-          console.warn('Frame-by-frame burn failed with', v.label, v.cfg, e);
-          tries.push(v.label + ' ' + v.cfg.codec + ' ' + v.cfg.width + '×' + v.cfg.height + ': ' + ((e && e.message) || String(e)));
+    var store = soundStore(plan.at), tries = [], vi = 0, failed = false, results = [], stamp = nameStamp();
+    var total = groups.length * kinds.length, nth = 0;
+    for (var gi = 0; gi < groups.length && !cancelled && !failed; gi++){
+      if (gi > 0) plan.segs = planSegments(plan, groups[gi].parts);
+      if (!plan.segs.list.length) continue;
+      var made = [];
+      for (var kk = 0; kk < kinds.length && !cancelled && !failed; kk++){
+        nth++;
+        var res = null, label = total > 1 ? 'Video ' + nth + ' of ' + total + '…' : 'Burning…';
+        for (; vi < plan.variants.length && !res && !cancelled; vi++){
+          var v = plan.variants[vi];
+          if (tries.length) $('progLeft').textContent = 'Trying again with different settings…';
+          try { res = await burnFrames(plan, v, kinds[kk], store, label); }
+          catch (e){
+            if (cancelled) break;
+            console.warn('Frame-by-frame burn failed with', v.label, v.cfg, e);
+            tries.push(v.label + ' ' + v.cfg.codec + ' ' + v.cfg.width + '×' + v.cfg.height + ': ' + ((e && e.message) || String(e)));
+          }
         }
+        if (res){ vi--; made.push(res); }   // the next video starts with the settings that worked
+        else failed = true;
       }
-      if (res){ vi--; made.push(res); }   // the next video starts with the settings that worked
-      else failed = true;
-    }
-    if (!cancelled && !failed){
+      if (cancelled || failed) break;
       try {
         $('progLabel').textContent = cut ? 'Cutting the sound…' : 'Finishing the file…';
         $('progBar').style.width = '100%';
-        $('progLeft').textContent = 'Almost done.';
+        $('progLeft').textContent = many ? 'Clip ' + (gi + 1) + ' of ' + groups.length + ' almost done.' : 'Almost done.';
         var sound = cut ? await cutSound(plan, store) : await wholeSound(plan, store);
         for (var m = 0; m < made.length; m++){
-          results.push({ blob: await finishMp4(plan, made[m], sound), kind: made[m].kind,
-            name: outName(made[m].kind, cut, plan.segs.total),
+          var clip = many ? { n: gi + 1, of: groups.length } : null;
+          results.push({ blob: await finishMp4(plan, made[m], sound), kind: made[m].kind, clip: clip,
+            cueIdx: many ? { first: groups[gi].first, last: groups[gi].last } : null,
+            name: outName(made[m].kind, cut, plan.segs.total, clip, stamp),
             note: made[m].note + (sound ? sound.note : ', with no sound because the original video has none') +
               (vi > 0 ? '. It used the backup “' + plan.variants[vi].label + '” settings' : '') });
+          if ($('saveEach').checked){ $('progLeft').textContent = 'Saving ' + results[results.length - 1].name + '…'; await saveNow(results[results.length - 1]); }
         }
       } catch (e){
         console.warn('Finishing failed:', e);
         tries.push('finishing: ' + ((e && e.message) || String(e)));
-        results = [];
+        failed = true;
       }
     }
     clearInterval(progTimer);
@@ -3605,6 +3881,7 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
     if (cancelled) return;
     if (!results.length){ showBurnError(plan, tries); return; }
     showResults(results, 'ok');
+    if (failed) showBurnError(plan, tries);   // the clips made before the problem are kept
   });
 
   async function burnRealtime(why){
@@ -3760,8 +4037,18 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
       else { fallbackSave(r.url, r.name); setStatus(st, 'Tried saving as ' + r.name + '. If it isn’t in your Downloads folder, open this page in Chrome and save from there.', 'warn'); }
     }
   }
-  $('saveBtn').addEventListener('click', function(){ saveResult(0); });
-  $('saveBtn2').addEventListener('click', function(){ saveResult(1); });
+  // Save all: one after another, with a short pause, since browsers handle a quick row of
+  // downloads better that way.
+  $('saveAll').addEventListener('click', async function(){
+    var b = this; b.disabled = true;
+    for (var i = 0; i < results.length; i++){
+      setStatus($('saveAllStatus'), 'Saving ' + (i + 1) + ' of ' + results.length + '…');
+      await saveResult(i);
+      await new Promise(function(r){ setTimeout(r, 600); });
+    }
+    setStatus($('saveAllStatus'), 'Saved ' + results.length + ' videos. If your phone asks whether this page may download several files, allow it.', 'ok');
+    b.disabled = false;
+  });
 
   /* ---------- Parts, Play the cut, tweet text ----------
      Ticked lines ("Keep") become the parts of a cut: each run of ticked lines, padded by
@@ -3771,24 +4058,87 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
     var dur = video.duration || Infinity, runs = [], cur = null, prev = -2;
     cues.forEach(function(c, i){
       if (!c.use) return;
-      if (cur && prev === i - 1){ cur.b = Math.max(cur.b, c.end); }
-      else { cur = { a: c.start, b: c.end }; runs.push(cur); }
+      if (cur && prev === i - 1){ cur.b = Math.max(cur.b, c.end); cur.last = i; }
+      else { cur = { a: c.start, b: c.end, first: i, last: i }; runs.push(cur); }
       prev = i;
     });
-    var parts = runs.map(function(r){ return { a: Math.max(0, r.a - cutOpts.buffer), b: Math.min(dur, r.b + cutOpts.buffer) }; })
+    var parts = runs.map(function(r){ return { a: Math.max(0, r.a - cutOpts.buffer), b: Math.min(dur, r.b + cutOpts.buffer), first: r.first, last: r.last }; })
       .sort(function(x, y){ return x.a - y.a; }), merged = [];
     parts.forEach(function(p){
       var m = merged[merged.length - 1];
-      if (m && p.a <= m.b + 0.05) m.b = Math.max(m.b, p.b); else merged.push({ a: p.a, b: p.b });
+      if (m && p.a <= m.b + 0.05){ m.b = Math.max(m.b, p.b); m.first = Math.min(m.first, p.first); m.last = Math.max(m.last, p.last); }
+      else merged.push({ a: p.a, b: p.b, first: p.first, last: p.last });
     });
     return merged.filter(function(p){ return p.b > p.a; });
   }
+
+  /* ---------- Clips ----------
+     "Separate clips": each part (a run of ticked lines with its extra time) becomes a clip
+     of its own, unless the part's first line says to join the clip before it
+     (cue.joinPrev). Each clip is burned on its own, with and/or without subtitles. */
+  var clipMode = 'one';
+  try { if (localStorage.getItem('clipMode') === 'separate') clipMode = 'separate'; } catch (e) {}
+  // parts → [{ parts, first, last, a, b, len }] (first/last: cue indices)
+  function momentsOf(parts){
+    var out = [];
+    parts.forEach(function(p, k){
+      var m = out[out.length - 1];
+      if (m && k > 0 && cues[p.first] && cues[p.first].joinPrev){ m.parts.push(p); m.last = Math.max(m.last, p.last); m.b = p.b; m.len += p.b - p.a; }
+      else out.push({ parts: [p], first: p.first, last: p.last, a: p.a, b: p.b, len: p.b - p.a });
+    });
+    return out;
+  }
+  function snippet(s){ s = String(s || '').replace(/\s+/g, ' ').trim(); return s.length > 60 ? s.slice(0, 57) + '…' : s; }
+  // The list of clips under "Separate clips": one row per part, joined parts marked.
+  function renderClips(parts, sep){
+    var ol = $('momentList'); ol.textContent = ''; ol.hidden = !sep;
+    if (!sep) return;
+    var n = 0;
+    parts.forEach(function(p, k){
+      var joined = k > 0 && cues[p.first] && cues[p.first].joinPrev;
+      if (!joined) n++;
+      var li = document.createElement('li'); li.className = 'moment' + (joined ? ' joined' : '');
+      var head = document.createElement('div'); head.className = 'moment-head';
+      head.textContent = (joined ? '+ also in clip ' : 'Clip ') + n + ' · ' + fmt(p.a) + '–' + fmt(p.b) + ' (' + fmt(p.b - p.a) + ')';
+      var words = document.createElement('div'); words.className = 'moment-words';
+      words.textContent = snippet(cues[p.first] && cues[p.first].text);
+      li.appendChild(head); li.appendChild(words);
+      if (k > 0){
+        var lab = document.createElement('label'); lab.className = 'check';
+        var cb = document.createElement('input'); cb.type = 'checkbox'; cb.dataset.join = String(p.first); cb.checked = !!joined; cb.disabled = burning;
+        lab.appendChild(cb); lab.appendChild(document.createTextNode(' Join with the clip before'));
+        li.appendChild(lab);
+      }
+      ol.appendChild(li);
+    });
+  }
+  function setClipMode(v){
+    clipMode = v === 'separate' ? 'separate' : 'one';
+    try { localStorage.setItem('clipMode', clipMode); } catch (e) {}
+    Array.prototype.forEach.call(document.querySelectorAll('[data-clkey] button'), function(b){ setPressed(b, b.dataset.val === clipMode); });
+    updateParts();
+  }
+  document.querySelector('[data-clkey]').addEventListener('click', function(e){
+    var b = e.target.closest('button'); if (!b || burning) return;
+    setClipMode(b.dataset.val);
+  });
+  $('momentList').addEventListener('change', function(e){
+    var t = e.target; if (!t.dataset || t.dataset.join === undefined || burning) return;
+    var c = cues[Number(t.dataset.join)]; if (c) c.joinPrev = t.checked;
+    updateParts();
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('[data-clkey] button'), function(b){ setPressed(b, b.dataset.val === clipMode); });
+
   function updateParts(){
     var parts = partsFromTicks(), dur = video.duration || 0, ticked = cues.filter(function(c){ return c.use; }).length;
     var total = parts.reduce(function(s, p){ return s + p.b - p.a; }, 0);
+    var sep = clipMode === 'separate' && parts.length >= 2, nClips = sep ? momentsOf(parts).length : 1;
     $('partsSummary').textContent = parts.length
-      ? ticked + ' line' + (ticked === 1 ? '' : 's') + ' ticked: ' + parts.length + ' part' + (parts.length === 1 ? '' : 's') + ', ' + fmt(total) + ' in total' + (dur ? ' (from ' + fmt(dur) + ')' : '') + '.'
+      ? ticked + ' line' + (ticked === 1 ? '' : 's') + ' ticked: ' + parts.length + ' part' + (parts.length === 1 ? '' : 's') + ', ' + fmt(total) + ' in total' + (dur ? ' (from ' + fmt(dur) + ')' : '') + '.' +
+        (sep ? ' ' + nClips + ' separate clip' + (nClips === 1 ? '' : 's') + '.' : '')
       : 'Whole video' + (dur ? ' (' + fmt(dur) + ')' : '') + '. Tick Keep on lines in step 2 to keep only those parts.';
+    $('clipBox').hidden = parts.length < 2;
+    renderClips(parts, sep);
     $('playCut').disabled = !parts.length || !hasVideo || burning;
     $('untickAll').disabled = !ticked || burning;
     // "without subtitles" only makes sense for a cut
@@ -3895,21 +4245,33 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
     $('tweetCount').textContent = n + ' / 280';
     $('tweetCount').className = 'tweet-count' + (n > 280 ? ' over' : '');
   }
-  function updateTweet(force){
-    if (tweetEdited && !force){ countTweet(); return; }
-    var list = cues.filter(function(c){ return c.use; });
-    if (!list.length) list = cues;
-    // Gemini blocks become paragraphs (lines joined with spaces, a blank line between blocks);
-    // other subtitles stay one per line
+  // Gemini blocks become paragraphs (lines joined with spaces, a blank line between blocks);
+  // other subtitles stay one per line
+  function tweetTextOf(list){
     var groups = [], last = null, anyBlock = false;
     list.forEach(function(c){
       var w = cleanTweet(c.text); if (!w) return;
       if (c.block !== undefined){ anyBlock = true; if (last && last.block === c.block){ last.parts.push(w); return; } }
       last = { block: c.block, parts: [w] }; groups.push(last);
     });
-    $('tweetText').value = groups.map(function(g){ return g.parts.join(g.block !== undefined ? ' ' : '\n'); }).join(anyBlock ? '\n\n' : '\n');
+    return groups.map(function(g){ return g.parts.join(g.block !== undefined ? ' ' : '\n'); }).join(anyBlock ? '\n\n' : '\n');
+  }
+  function updateTweet(force){
+    if (tweetEdited && !force){ countTweet(); return; }
+    var list = cues.filter(function(c){ return c.use; });
+    if (!list.length) list = cues;
+    $('tweetText').value = tweetTextOf(list);
     tweetEdited = false;
     countTweet();
+  }
+  // One clip's tweet text (its ticked lines), from its result card.
+  function copyClipTweet(i){
+    var r = results[i]; if (!r || !r.cueIdx) return;
+    var text = tweetTextOf(cues.slice(r.cueIdx.first, r.cueIdx.last + 1).filter(function(c){ return c.use; }));
+    copyText(text).then(function(ok){
+      setStatus($(CARDS[i].status), ok ? 'This clip’s tweet text is copied (' + tweetLength(text) + ' / 280).'
+        : 'Couldn’t copy here. Use the Tweet text box above instead.', ok ? 'ok' : 'warn');
+    });
   }
   $('tweetText').addEventListener('input', function(){ tweetEdited = true; countTweet(); });
   $('tweetRefresh').addEventListener('click', function(){ updateTweet(true); setStatus($('tweetStatus'), 'Back to the lines’ words.'); });
@@ -4125,7 +4487,6 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
      hands the video straight to TikTok, X and so on. Shown only where files can be shared. */
   var canShareFiles = false;
   try { canShareFiles = !!(navigator.share && navigator.canShare && navigator.canShare({ files: [new File([new Blob(['x'])], 'x.mp4', { type: 'video/mp4' })] })); } catch (e) {}
-  if (env.ios) $('shareBtn').textContent = $('shareBtn2').textContent = 'Save to Photos';
   function shareResult(i){
     var r = results[i], st = $(CARDS[i].status);
     if (!r) return;
@@ -4135,13 +4496,129 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
       setStatus(st, 'Couldn’t share here. Use Save video instead.', 'warn');
     });
   }
-  $('shareBtn').addEventListener('click', function(){ shareResult(0); });
-  $('shareBtn2').addEventListener('click', function(){ shareResult(1); });
+  /* ---------- Autosave ----------
+     The work (both pasted texts, every line's words, times, ticks, joins and own position,
+     the Gemini blocks, the look and output choices) is saved on the phone every 2 s when it
+     changed, and at once when the page is hidden or closed. After a crash or reload a note
+     offers to bring it back. A page can't keep or reopen the video file itself, so the note
+     asks to choose it again, and picking a different one gets a warning. While the note
+     waits for an answer the saved work is left alone; starting new work instead keeps the
+     old copy under SESSION_KEY + '-prev'. */
+  var SESSION_KEY = 'session3', sessionLast = '', sessionOffer = null, sessionVideo = null;
+  function sessionState(){
+    return {
+      v: 1, savedAt: Date.now(),
+      video: videoFile ? { name: videoFile.name, size: videoFile.size, dur: video.duration || 0 } : null,
+      autoText: $('autoText').value, pasteText: $('pasteArea').value,
+      cues: cues.map(function(c){
+        return { start: c.start, end: c.end, text: c.text, use: !!c.use, joinPrev: !!c.joinPrev, block: c.block,
+                 adj: c.adj || null, src: c.src || null, srcText: c.srcText };
+      }),
+      blocks: geminiBlocks.map(function(b){ return { start: b.start, end: b.end, text: b.text }; }),
+      adjAll: adjAll, opts: { pos: opts.pos, size: opts.size, width: opts.width },
+      make: makeChoice, labelPick: labelPick, burning: burning
+    };
+  }
+  function hasWork(s){ return s.cues.length > 0 || !!s.autoText.trim() || !!s.pasteText.trim(); }
+  function saveSession(){
+    var s = sessionState();
+    if (!hasWork(s)) return;
+    if (sessionOffer){   // new work while the Restore note waits: keep the old work aside
+      try { localStorage.setItem(SESSION_KEY + '-prev', JSON.stringify(sessionOffer)); } catch (e) {}
+      sessionOffer = null; $('restoreNote').hidden = true;
+    }
+    var str = JSON.stringify(s), body = str.replace(/"savedAt":\d+,/, '');
+    if (body === sessionLast) return;
+    sessionLast = body;
+    try { localStorage.setItem(SESSION_KEY, str); } catch (e) { console.warn('Autosave failed:', e); }
+  }
+  function restoreSession(s){
+    stopEditing();
+    $('autoText').value = s.autoText || '';
+    $('pasteArea').value = s.pasteText || '';
+    geminiBlocks = s.blocks || [];
+    cues = (s.cues || []).map(function(c){
+      var o = { start: c.start, end: c.end, text: c.text, chars: countChars(c.text) };
+      if (c.use) o.use = true;
+      if (c.joinPrev) o.joinPrev = true;
+      if (c.block !== undefined && c.block !== null) o.block = c.block;
+      if (c.adj) o.adj = c.adj;
+      if (c.src) o.src = c.src;
+      if (c.srcText !== undefined) o.srcText = c.srcText;
+      var dur = o.end - o.start; o.warn = dur < 0.8 || o.chars / dur > 25;
+      return o;
+    });
+    if (s.adjAll) adjAll = s.adjAll;
+    if (s.opts) ['pos', 'size', 'width'].forEach(function(k){
+      var b = document.querySelector('.seg[data-key="' + k + '"] [data-val="' + s.opts[k] + '"]');
+      if (b) b.click();
+    });
+    if (s.make) setMake(s.make);
+    labelPick = s.labelPick || null;
+    $('autoReview').hidden = !cues.length;
+    updateGeminiNote(); updateLookAdj(); renderCueList(); updateParts(); redraw(); updateBurnState();
+    setStatus($('srtStatus'), 'Restored ' + cues.length + ' line' + (cues.length === 1 ? '' : 's') + ' from your last session.', 'ok');
+    sessionVideo = s.video;
+    if (s.video && !(videoFile && videoFile.name === s.video.name && videoFile.size === s.video.size)){
+      setStatus($('videoStatus'), 'Choose the video again: ' + s.video.name + '. Your lines and ticks are back, but a page can’t reopen a video by itself.', 'warn');
+    } else sessionVideo = null;
+  }
+  // Called from the video's loadedmetadata: is this the video the restored lines belong to?
+  function checkSessionVideo(){
+    if (!sessionVideo || !videoFile) return;
+    if (videoFile.name !== sessionVideo.name || videoFile.size !== sessionVideo.size)
+      setStatus($('videoStatus'), videoFile.name + ' isn’t the video your restored lines were made for (' + sessionVideo.name + '). The lines stay as they are; check their times.', 'warn');
+    sessionVideo = null;
+  }
+  (function(){
+    var raw = null, s = null;
+    try { raw = localStorage.getItem(SESSION_KEY); } catch (e) {}
+    try { s = raw && JSON.parse(raw); } catch (e) {}
+    if (!s || s.v !== 1 || !s.cues || !hasWork(s)) return;
+    sessionOffer = s;
+    var ticked = s.cues.filter(function(c){ return c.use; }).length;
+    $('restoreText').textContent = 'Pick up where you left off? ' + (s.video ? s.video.name + ', ' : '') +
+      s.cues.length + ' line' + (s.cues.length === 1 ? '' : 's') + (ticked ? ', ' + ticked + ' ticked' : '') +
+      ', saved ' + new Date(s.savedAt).toLocaleString() + '.' + (s.burning ? ' The last burn didn’t finish.' : '');
+    $('restoreNote').hidden = false;
+  })();
+  $('restoreYes').addEventListener('click', function(){
+    var s = sessionOffer; sessionOffer = null; $('restoreNote').hidden = true;
+    if (s) restoreSession(s);
+  });
+  $('restoreNo').addEventListener('click', function(){
+    sessionOffer = null; $('restoreNote').hidden = true;
+    try { localStorage.removeItem(SESSION_KEY); } catch (e) {}
+  });
+  setInterval(saveSession, 2000);
+  document.addEventListener('visibilitychange', function(){ if (document.hidden) saveSession(); });
+  window.addEventListener('pagehide', saveSession);
+
+  /* Save each video as soon as it's done (during a burn, before its card exists), so a crash
+     later in a long burn can't take the finished ones with it. Remembered. */
+  (function(){
+    var cb = $('saveEach');
+    try { cb.checked = localStorage.getItem('saveEach') === '1'; } catch (e) {}
+    cb.addEventListener('change', function(){ try { localStorage.setItem('saveEach', cb.checked ? '1' : '0'); } catch (e) {} });
+  })();
+  async function saveNow(r){
+    var url = URL.createObjectURL(r.blob), dl = await downloadsReady;
+    try {
+      if (!dl) fallbackSave(url, r.name);
+      else await dl.save({ filename: r.name, data: r.blob });
+      r.saved = true;
+    } catch (e) { console.warn('Saving right away failed:', e); }
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 60000);
+  }
+
   // Tests only (page opened with ?test).
   if (/[?&]test\b/.test(location.search)) window.__sb = { parseGeminiBlocks: parseGeminiBlocks, requestText: requestText, defaultLangName: defaultLangName,
     langFor: langFor, wrapLines: wrapLines, wordUnits: wordUnits, splitLines: splitLines, dispLen: dispLen,
     countChars: countChars, missingIn: missingIn, ctx: ctx };
   if (window.__sb) Object.assign(window.__sb, { envNoteFor: envNoteFor, pageEnv: pageEnv, showEnvNote: showEnvNote, canShare: function(){ return canShareFiles; } });
+  if (window.__sb) Object.assign(window.__sb, { partsFromTicks: partsFromTicks, momentsOf: momentsOf, tweetTextOf: tweetTextOf,
+    findSpeech: findSpeech, findSpeechDb: findSpeechDb, decodeAudio16k: decodeAudio16k, speechDbLong: speechDbLong,
+    file: function(){ return videoFile; }, setForceLong: function(v){ forceLongSound = !!v; }, saveSession: saveSession, sessionState: sessionState });
 })();
 </script>
 </body>
