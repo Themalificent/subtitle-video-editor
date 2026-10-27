@@ -229,6 +229,9 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
 .cue-head .cue-use + .cue-use{margin-left:6px}
 .moment-head{font-weight:700}
 .moment-words{color:var(--muted);font-size:16px;margin:2px 0 4px;white-space:pre-line}
+.moment-line{padding:6px 0}
+.moment-line + .moment-line{border-top:1px solid var(--line)}
+.moment-line .check{font-size:15px;margin-top:4px}
 .cue-list.locked .cue-row:not(.editing) .cue-text{pointer-events:none;color:var(--muted);background:transparent;border-color:transparent}
 .cue-note{margin:0 0 6px;font-size:15px;color:var(--warn)}
 .edit-row{display:flex;flex-wrap:wrap;gap:6px 18px;margin:6px 0 8px}
@@ -3830,7 +3833,7 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
       return burnRealtime(why);
     }
     // Separate clips: each clip (a part, or parts joined) becomes its own video(s).
-    var groups = cut && clipMode === 'separate' && parts.length >= 2 ? momentsOf(parts) : [{ parts: parts, first: -1, last: -1 }];
+    var groups = cut && clipMode === 'separate' ? momentsOf(parts) : [{ parts: parts, first: -1, last: -1 }];
     var many = groups.length > 1;
     plan.segs = planSegments(plan, groups[0].parts);
     if (!plan.segs.list.length){ $('burnHint').textContent = 'The ticked lines are outside the video. Check their times.'; return; }
@@ -4072,19 +4075,26 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
      the buffer, is one part; parts that touch merge. No ticks = the whole video. */
   var onlyTicked = false, cutPlay = null, makeChoice = 'subs', cutOpts = { buffer: 0.5 }, tweetEdited = false;
   function partsFromTicks(){
-    var dur = video.duration || Infinity, runs = [], cur = null, prev = -2;
+    var dur = video.duration || Infinity, runs = [], cur = null, prev = -2, sep = clipMode === 'separate';
     cues.forEach(function(c, i){
       if (!c.use) return;
-      if (cur && prev === i - 1){ cur.b = Math.max(cur.b, c.end); cur.last = i; }
-      else { cur = { a: c.start, b: c.end, first: i, last: i }; runs.push(cur); }
+      var split = !!(sep && c.splitHere && cur && prev === i - 1);
+      if (cur && prev === i - 1 && !split){ cur.b = Math.max(cur.b, c.end); cur.last = i; }
+      else { cur = { a: c.start, b: c.end, first: i, last: i, split: split }; runs.push(cur); }
       prev = i;
     });
-    var parts = runs.map(function(r){ return { a: Math.max(0, r.a - cutOpts.buffer), b: Math.min(dur, r.b + cutOpts.buffer), first: r.first, last: r.last }; })
+    var parts = runs.map(function(r){ return { a: Math.max(0, r.a - cutOpts.buffer), b: Math.min(dur, r.b + cutOpts.buffer), first: r.first, last: r.last, split: r.split }; })
       .sort(function(x, y){ return x.a - y.a; }), merged = [];
     parts.forEach(function(p){
       var m = merged[merged.length - 1];
-      if (m && p.a <= m.b + 0.05){ m.b = Math.max(m.b, p.b); m.first = Math.min(m.first, p.first); m.last = Math.max(m.last, p.last); }
-      else merged.push({ a: p.a, b: p.b, first: p.first, last: p.last });
+      if (m && !p.split && p.a <= m.b + 0.05){ m.b = Math.max(m.b, p.b); m.first = Math.min(m.first, p.first); m.last = Math.max(m.last, p.last); }
+      else merged.push({ a: p.a, b: p.b, first: p.first, last: p.last, split: p.split });
+    });
+    // a new clip started at a line: the two clips meet halfway between that line and the one before
+    merged.forEach(function(p, k){
+      if (!p.split || !k) return;
+      var mid = (cues[p.first - 1].end + cues[p.first].start) / 2;
+      merged[k - 1].b = Math.min(merged[k - 1].b, mid); p.a = Math.max(p.a, mid);
     });
     return merged.filter(function(p){ return p.b > p.a; });
   }
@@ -4100,7 +4110,7 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
     var out = [];
     parts.forEach(function(p, k){
       var m = out[out.length - 1];
-      if (m && k > 0 && cues[p.first] && cues[p.first].joinPrev){ m.parts.push(p); m.last = Math.max(m.last, p.last); m.b = p.b; m.len += p.b - p.a; }
+      if (m && k > 0 && !p.split && cues[p.first] && cues[p.first].joinPrev){ m.parts.push(p); m.last = Math.max(m.last, p.last); m.b = p.b; m.len += p.b - p.a; }
       else out.push({ parts: [p], first: p.first, last: p.last, a: p.a, b: p.b, len: p.b - p.a });
     });
     return out;
@@ -4111,23 +4121,29 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
     var ol = $('momentList'); ol.textContent = ''; ol.hidden = !sep;
     if (!sep) return;
     var n = 0;
+    function tick(label, key, idx, on){
+      var lab = document.createElement('label'); lab.className = 'check';
+      var cb = document.createElement('input'); cb.type = 'checkbox'; cb.dataset[key] = String(idx); cb.checked = on; cb.disabled = burning;
+      lab.appendChild(cb); lab.appendChild(document.createTextNode(' ' + label));
+      return lab;
+    }
     parts.forEach(function(p, k){
-      var joined = k > 0 && cues[p.first] && cues[p.first].joinPrev;
+      var joined = k > 0 && !p.split && cues[p.first] && cues[p.first].joinPrev;
       if (!joined) n++;
       var li = document.createElement('li'); li.className = 'moment c' + ((n - 1) % 4) + (joined ? ' joined' : '');
       var head = document.createElement('div'); head.className = 'moment-head';
       head.textContent = (joined ? '+ also in clip ' : 'Clip ') + n + ' · ' + fmt(p.a) + '–' + fmt(p.b) + ' (' + fmt(p.b - p.a) + ')';
-      var words = document.createElement('div'); words.className = 'moment-words';
-      // every ticked line of the part, one per row
-      words.textContent = cues.slice(p.first, p.last + 1).filter(function(c){ return c.use; })
-        .map(function(c){ return c.text.replace(/\s+/g, ' ').trim(); }).join('\n');
-      li.appendChild(head); li.appendChild(words);
-      if (k > 0){
-        var lab = document.createElement('label'); lab.className = 'check';
-        var cb = document.createElement('input'); cb.type = 'checkbox'; cb.dataset.join = String(p.first); cb.checked = !!joined; cb.disabled = burning;
-        lab.appendChild(cb); lab.appendChild(document.createTextNode(' Join with the clip before'));
-        li.appendChild(lab);
+      li.appendChild(head);
+      // every ticked line of the part; any but the first can start a new clip
+      for (var i = p.first, j = 0; i <= p.last; i++){
+        var c = cues[i]; if (!c || !c.use) continue;
+        var row = document.createElement('div'); row.className = 'moment-line';
+        var txt = document.createElement('div'); txt.className = 'moment-words'; txt.textContent = c.text.replace(/\s+/g, ' ').trim();
+        row.appendChild(txt);
+        if (j > 0 || p.split) row.appendChild(tick('New clip from this line', 'split', i, j === 0));
+        li.appendChild(row); j++;
       }
+      if (k > 0 && !p.split) li.appendChild(tick('Join with the clip before', 'join', p.first, !!joined));
       ol.appendChild(li);
     });
   }
@@ -4142,7 +4158,13 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
     setClipMode(b.dataset.val);
   });
   $('momentList').addEventListener('change', function(e){
-    var t = e.target; if (!t.dataset || t.dataset.join === undefined || burning) return;
+    var t = e.target; if (!t.dataset || burning) return;
+    if (t.dataset.split !== undefined){
+      var s = cues[Number(t.dataset.split)];
+      if (s){ s.splitHere = t.checked; if (t.checked) s.joinPrev = false; }
+      updateParts(); return;
+    }
+    if (t.dataset.join === undefined) return;
     var c = cues[Number(t.dataset.join)]; if (c) c.joinPrev = t.checked;
     updateParts();
   });
@@ -4151,12 +4173,12 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
   function updateParts(){
     var parts = partsFromTicks(), dur = video.duration || 0, ticked = cues.filter(function(c){ return c.use; }).length;
     var total = parts.reduce(function(s, p){ return s + p.b - p.a; }, 0);
-    var sep = clipMode === 'separate' && parts.length >= 2, nClips = sep ? momentsOf(parts).length : 1;
+    var sep = clipMode === 'separate' && parts.length >= 1, nClips = sep ? momentsOf(parts).length : 1;
     $('partsSummary').textContent = parts.length
       ? ticked + ' line' + (ticked === 1 ? '' : 's') + ' ticked: ' + parts.length + ' part' + (parts.length === 1 ? '' : 's') + ', ' + fmt(total) + ' in total' + (dur ? ' (from ' + fmt(dur) + ')' : '') + '.' +
         (sep ? ' ' + nClips + ' separate clip' + (nClips === 1 ? '' : 's') + '.' : '')
       : 'Whole video' + (dur ? ' (' + fmt(dur) + ')' : '') + '. Tick Keep on lines in step 2 to keep only those parts.';
-    $('clipBox').hidden = parts.length < 2;
+    $('clipBox').hidden = !parts.length;   // one unbroken run can still be split into clips
     renderClips(parts, sep);
     $('playCut').disabled = !parts.length || !hasVideo || burning;
     $('untickAll').disabled = !ticked || burning;
@@ -4536,7 +4558,7 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
       video: videoFile ? { name: videoFile.name, size: videoFile.size, dur: video.duration || 0 } : null,
       autoText: $('autoText').value, pasteText: $('pasteArea').value,
       cues: cues.map(function(c){
-        return { start: c.start, end: c.end, text: c.text, use: !!c.use, joinPrev: !!c.joinPrev, block: c.block,
+        return { start: c.start, end: c.end, text: c.text, use: !!c.use, joinPrev: !!c.joinPrev, splitHere: !!c.splitHere, block: c.block,
                  adj: c.adj || null, src: c.src || null, srcText: c.srcText };
       }),
       blocks: geminiBlocks.map(function(b){ return { start: b.start, end: b.end, text: b.text }; }),
@@ -4566,6 +4588,7 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
       var o = { start: c.start, end: c.end, text: c.text, chars: countChars(c.text) };
       if (c.use) o.use = true;
       if (c.joinPrev) o.joinPrev = true;
+      if (c.splitHere) o.splitHere = true;
       if (c.block !== undefined && c.block !== null) o.block = c.block;
       if (c.adj) o.adj = c.adj;
       if (c.src) o.src = c.src;
