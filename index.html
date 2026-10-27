@@ -266,6 +266,12 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
 .env-note p{margin:0;flex:1 1 200px}
 .env-note .btn.small{width:auto;min-height:44px}
 .env-note.warn{background:transparent;border:2px solid var(--warn);color:var(--warn);font-weight:700}
+/* The tour offer: the app's accent colour, so it stands apart from the other notes */
+.env-note.tour-offer{background:var(--accent);color:var(--accent-ink);font-weight:700;font-size:18px;padding:16px;box-shadow:0 8px 22px rgba(44,71,214,.35)}
+.tour-offer p{flex:1 1 100%;display:flex;align-items:center;gap:12px}
+.tour-offer-mark{flex:none;display:grid;place-items:center;width:36px;height:36px;border-radius:50%;background:var(--accent-ink);color:var(--accent);font-size:20px}
+.env-note.tour-offer .btn.small{background:var(--accent-ink);color:var(--accent);border-color:var(--accent-ink)}
+.env-note.tour-offer .linkish{color:var(--accent-ink)}
 .fname{margin:0;font-size:15px;color:var(--muted);overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
 
 /* Style controls */
@@ -320,6 +326,11 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
 </div>
 <main>
   <h1>Subtitle burner</h1>
+  <div class="env-note tour-offer" id="tourNote" role="status" hidden>
+    <p><span class="tour-offer-mark" aria-hidden="true">?</span>New here? Take a short tour of what each part does.</p>
+    <button class="btn small" id="tourStart" type="button">Show me</button>
+    <button class="linkish" id="tourNo" type="button">No thanks</button>
+  </div>
   <div class="env-note" id="envNote" role="status" hidden>
     <p id="envText"></p>
     <button class="btn small" id="installBtn" type="button" hidden>Install</button>
@@ -329,11 +340,6 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
     <p id="restoreText"></p>
     <button class="btn small" id="restoreYes" type="button">Restore</button>
     <button class="linkish" id="restoreNo" type="button">Start fresh</button>
-  </div>
-  <div class="env-note" id="tourNote" role="status" hidden>
-    <p>New here? A short tour shows what each part does.</p>
-    <button class="btn small" id="tourStart" type="button">Show me</button>
-    <button class="linkish" id="tourNo" type="button">No thanks</button>
   </div>
 
   <section data-help="This is your preview. After you pick a video, tap a subtitle here to move it, drag its corner to resize it, or turn it with two fingers." class="stage" aria-label="Preview">
