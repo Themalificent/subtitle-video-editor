@@ -249,6 +249,18 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
 .edit-row [hidden],#shiftRow[hidden]{display:none}
 .save-all{display:grid;gap:6px;margin-top:12px}
 .save-all[hidden]{display:none}
+.tour-layer{position:fixed;inset:0;z-index:1000}
+.tour-layer[hidden]{display:none}
+.tour-ring{position:fixed;border:3px solid var(--accent);border-radius:14px;box-shadow:0 0 0 9999px rgba(4,7,13,.6);pointer-events:none}
+.tour-bubble{position:fixed;padding:14px 16px 12px;border-radius:14px;background:var(--surface);color:var(--ink);box-shadow:0 10px 30px rgba(0,0,0,.4);font-size:17px;line-height:1.45}
+.tour-bubble::before{content:'';position:absolute;left:calc(var(--ax, 50%) - 9px);top:-9px;border:9px solid transparent;border-top:0;border-bottom-color:var(--surface)}
+.tour-bubble.above::before{top:auto;bottom:-9px;border:9px solid transparent;border-bottom:0;border-top-color:var(--surface)}
+.tour-bubble p{margin:0 0 12px}
+.tour-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.tour-count{flex:1;color:var(--muted);font-size:15px}
+.tour-row .btn.small{width:auto;min-height:44px;padding:6px 14px}
+.help-btn{margin-left:auto;flex:none;width:36px;height:36px;border-radius:50%;border:2px solid var(--line);background:var(--bg);color:var(--ink);font:inherit;font-weight:700;font-size:18px;cursor:pointer}
+.tour-again{text-align:center;margin:8px 0 24px}
 .env-note{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px;margin:0 0 14px;padding:12px 14px;border-radius:14px;background:var(--accent-soft);color:var(--ink);font-size:16px;line-height:1.4}
 .env-note[hidden]{display:none}
 .env-note p{margin:0;flex:1 1 200px}
@@ -318,9 +330,14 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
     <button class="btn small" id="restoreYes" type="button">Restore</button>
     <button class="linkish" id="restoreNo" type="button">Start fresh</button>
   </div>
+  <div class="env-note" id="tourNote" role="status" hidden>
+    <p>New here? A short tour shows what each part does.</p>
+    <button class="btn small" id="tourStart" type="button">Show me</button>
+    <button class="linkish" id="tourNo" type="button">No thanks</button>
+  </div>
 
-  <section class="stage" aria-label="Preview">
-    <button class="crop-btn" id="cropBtn" type="button" disabled aria-label="Crop the video"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/></svg><span>Crop</span></button>
+  <section data-help="This is your preview. After you pick a video, tap a subtitle here to move it, drag its corner to resize it, or turn it with two fingers." class="stage" aria-label="Preview">
+    <button data-help="Crop cuts off phone bars, the clock or anything else at the edges. It’s remembered for videos of the same size." class="crop-btn" id="cropBtn" type="button" disabled aria-label="Crop the video"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/></svg><span>Crop</span></button>
     <div class="screen" id="screen">
       <canvas id="canvas" width="1080" height="1920" aria-label="Video preview with subtitles"></canvas>
       <div class="guide gv" id="guideV" hidden></div>
@@ -378,7 +395,7 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
   <section class="step">
     <h2><span class="num">1</span>Video</h2>
     <div class="pair">
-      <label class="btn primary" id="videoBtn">From gallery<input id="videoInput" type="file" accept="video/*"></label>
+      <label data-help="Start here: pick your video from the gallery, or with From files." class="btn primary" id="videoBtn">From gallery<input id="videoInput" type="file" accept="video/*"></label>
       <label class="btn" id="videoBtn2">From files<input id="videoInput2" type="file" accept="*/*"></label>
     </div>
     <p class="status" id="videoStatus">No video yet.</p>
@@ -394,18 +411,18 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
       <div class="lang-row">
         <label class="label" for="toLang">Translate into</label>
         <div class="pair">
-          <select id="toLang" class="lang-select">
+          <select data-help="The language your subtitles should be in. Pick Custom to type any language." id="toLang" class="lang-select">
             <option value="english">English</option>
             <option value="custom">Custom…</option>
           </select>
-          <button class="btn small" id="copyRequest" type="button">Copy Gemini request</button>
+          <button data-help="Copies a ready-made request for Gemini. Paste it into Gemini with your video, add any context at the end, and send." class="btn small" id="copyRequest" type="button">Copy Gemini request</button>
         </div>
         <input id="toLangName" class="lang-input" type="text" autocomplete="off" placeholder="Type the language, e.g. Spanish" aria-label="Language to translate into" hidden>
         <p class="status" id="requestStatus" hidden></p>
         <textarea id="requestBox" class="compact" readonly hidden aria-label="Gemini request"></textarea>
       </div>
       <div class="paste-wrap">
-        <textarea id="autoText" class="compact" aria-labelledby="autoLabel" placeholder="Paste your finished translation here. Gemini’s answer with [00:00 - 00:46] blocks works as it is."></textarea>
+        <textarea data-help="Paste Gemini’s answer here. The Paste button saves you the keyboard. Plain lines of text work too." id="autoText" class="compact" aria-labelledby="autoLabel" placeholder="Paste your finished translation here. Gemini’s answer with [00:00 - 00:46] blocks works as it is."></textarea>
         <button class="paste-btn" id="autoPaste" type="button"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>Paste</button>
       </div>
       <div id="geminiNote" hidden>
@@ -426,12 +443,12 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
         <label class="btn" id="whisperBtn" style="margin-top:10px">Set up Whisper files<input id="whisperFiles" type="file" multiple></label>
         <p class="status" id="whisperStatus">Checking for Whisper files…</p>
       </div>
-      <div class="row" style="margin-top:10px"><button class="btn primary" id="autoRun" type="button">Make timings</button></div>
+      <div class="row" style="margin-top:10px"><button data-help="Make timings finds where people speak and times each line to it." class="btn primary" id="autoRun" type="button">Make timings</button></div>
       <p class="status" id="autoStatus">Choose a video first, then paste your translation.</p>
     </div>
     <p class="label" style="margin-top:16px">Or use timed subtitles</p>
     <div class="pair" style="margin-top:6px">
-      <label class="btn small" id="srtBtn">SRT file<input id="srtInput" type="file"></label>
+      <label data-help="Already have timed subtitles, like an SRT from Clovanote and Gemini? Load the file or paste it here instead." class="btn small" id="srtBtn">SRT file<input id="srtInput" type="file"></label>
       <button class="btn small" id="pasteToggle" type="button" aria-expanded="false">Paste SRT</button>
     </div>
     <div id="pasteBox" hidden>
@@ -450,7 +467,7 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
         <label class="check" id="writeBackRow"><input id="writeBack" type="checkbox" checked> Also fix the pasted text</label>
       </div>
       <div class="row" id="shiftRow"><button class="btn" id="shiftEarlier" type="button">All 0.25 s earlier</button><button class="btn" id="shiftLater" type="button">All 0.25 s later</button></div>
-      <ol class="cue-list" id="cueList"></ol>
+      <ol data-help="Your subtitles. Tick Keep on the lines you want in a clip, and Edit to fix a line’s words or timing." class="cue-list" id="cueList"></ol>
       <div class="row"><button class="btn" id="copySrt" type="button">Copy as SRT</button></div>
     </div>
   </section>
@@ -458,7 +475,7 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
   <section class="step">
     <h2><span class="num">3</span>Look</h2>
     <p class="label" id="sizeLabel">Text size</p>
-    <div class="seg" role="group" aria-labelledby="sizeLabel" data-key="size">
+    <div data-help="Text size, position and width of the subtitles. You can also drag them on the preview." class="seg" role="group" aria-labelledby="sizeLabel" data-key="size">
       <button type="button" data-val="s" aria-pressed="false">Small</button>
       <button type="button" data-val="m" aria-pressed="true">Medium</button>
       <button type="button" data-val="l" aria-pressed="false">Large</button>
@@ -483,7 +500,7 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
 
     <div class="style-ui" id="styleUI">
       <h3 class="sub-h" id="styleLabel">Style</h3>
-      <div class="presets" id="presets" role="group" aria-labelledby="styleLabel">
+      <div data-help="Ready-made caption styles. Below them you can change the font, colours, outline and box. Your style is remembered." class="presets" id="presets" role="group" aria-labelledby="styleLabel">
         <button type="button" data-preset="classic"><span class="pv">Aa</span>Classic</button>
         <button type="button" data-preset="tiktok"><span class="pv">Aa</span>TikTok box</button>
         <button type="button" data-preset="darkbox"><span class="pv">Aa</span>Dark box</button>
@@ -555,8 +572,8 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
 
   <section class="step" id="partsCard">
     <h2><span class="num">4</span>Parts</h2>
-    <p class="status" id="partsSummary" style="margin-top:0">Whole video. Tick Keep on lines in step 2 to keep only those parts.</p>
-    <div id="clipBox" hidden>
+    <p data-help="What will be kept. With nothing ticked, the whole video gets subtitles." class="status" id="partsSummary" style="margin-top:0">Whole video. Tick Keep on lines in step 2 to keep only those parts.</p>
+    <div data-help="One clip joins everything you ticked. Separate clips makes one video per part: drag clips by ⠿, join them, or start a new clip at any line." id="clipBox" hidden>
       <p class="label" id="clipLabel" style="margin-top:14px">Clips</p>
       <div class="seg two" data-clkey="clips" role="group" aria-labelledby="clipLabel">
         <button type="button" data-val="one" aria-pressed="true">One clip</button>
@@ -565,17 +582,17 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
       <ol class="moment-list" id="momentList" hidden></ol>
     </div>
     <p class="label" id="bufLabel" style="margin-top:14px">Extra time before and after each part</p>
-    <div class="seg" data-ckey="buffer" role="group" aria-labelledby="bufLabel">
+    <div data-help="Extra time kept before and after each part, so words aren’t cut off." class="seg" data-ckey="buffer" role="group" aria-labelledby="bufLabel">
       <button type="button" data-val="0.25" aria-pressed="false">0.25 s</button>
       <button type="button" data-val="0.5" aria-pressed="true">0.5 s</button>
       <button type="button" data-val="1" aria-pressed="false">1 s</button>
     </div>
     <div class="pair" style="margin-top:10px">
-      <button class="btn small" id="playCut" type="button" disabled>Play the cut</button>
+      <button data-help="Play the cut shows exactly what will be kept, in order." class="btn small" id="playCut" type="button" disabled>Play the cut</button>
       <button class="btn small" id="untickAll" type="button" disabled>Untick all</button>
     </div>
     <p class="label" id="tweetLabel" style="margin-top:18px">Tweet text</p>
-    <textarea id="tweetText" class="compact" aria-labelledby="tweetLabel" placeholder="The ticked lines’ words appear here."></textarea>
+    <textarea data-help="The words of the ticked lines, without timestamps, ready to copy into a tweet." id="tweetText" class="compact" aria-labelledby="tweetLabel" placeholder="The ticked lines’ words appear here."></textarea>
     <div class="tweet-row">
       <span class="tweet-count" id="tweetCount">0 / 280</span>
       <button class="linkish" id="tweetRefresh" type="button">Reset to the lines</button>
@@ -586,13 +603,13 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
 
   <section class="step" id="burnCard">
     <h2><span class="num">5</span>Make</h2>
-    <div class="seg" data-mkey="make" role="group" aria-label="What to make">
+    <div data-help="Make the video with subtitles, without them (for example for Twitter), or both." class="seg" data-mkey="make" role="group" aria-label="What to make">
       <button type="button" data-val="subs" aria-pressed="true">With subtitles</button>
       <button type="button" data-val="nosubs" aria-pressed="false">Without</button>
       <button type="button" data-val="both" aria-pressed="false">Both</button>
     </div>
-    <label class="check" style="margin-top:8px"><input id="saveEach" type="checkbox"> Save each video as soon as it’s done</label>
-    <button class="btn primary" id="burnBtn" type="button" disabled>Burn subtitles</button>
+    <label data-help="Saves each video the moment it’s done, so a crash can’t lose the finished ones." class="check" style="margin-top:8px"><input id="saveEach" type="checkbox"> Save each video as soon as it’s done</label>
+    <button data-help="Makes your video. Keep the screen on until it’s finished. Your work is saved as you go, so a crash or reload won’t lose it." class="btn primary" id="burnBtn" type="button" disabled>Burn subtitles</button>
     <p class="hint" id="burnHint">Choose a video and subtitles first.</p>
 
     <div class="errbox" id="burnError" hidden>
@@ -611,7 +628,7 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
       </div>
     </div>
 
-    <div class="result" id="result" hidden>
+    <div data-help="Your finished videos. Save them, or use Share (Save to Photos on iPhone). Separate clips each get a button that copies their tweet text." class="result" id="result" hidden>
       <p class="big">Done. Check, then save.</p>
       <div class="save-all" id="saveAllRow" hidden>
         <button class="btn primary" id="saveAll" type="button">Save all</button>
@@ -622,6 +639,18 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
   </section>
 </main>
 
+<div class="tour-layer" id="tourLayer" hidden>
+  <div class="tour-ring" id="tourRing"></div>
+  <div class="tour-bubble" id="tourBubble" role="dialog" aria-label="Tour">
+    <p id="tourText"></p>
+    <div class="tour-row">
+      <span class="tour-count" id="tourCount"></span>
+      <button class="linkish" id="tourSkip" type="button">Close</button>
+      <button class="btn small" id="tourBack" type="button">Back</button>
+      <button class="btn small primary" id="tourNext" type="button">Next</button>
+    </div>
+  </div>
+</div>
 <video id="src" playsinline preload="auto"></video>
 
 <script>
@@ -4745,6 +4774,101 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
     setTimeout(function(){ URL.revokeObjectURL(url); }, 60000);
   }
 
+  /* ---------- Help tour ----------
+     Help lives on the controls themselves: any element with data-help="…" is a stop. The
+     tour visits the visible ones in page order and skips hidden parts (the line list before
+     there are lines, results before a burn), so a new control with data-help joins the tour
+     and a removed one leaves it, with no separate list to keep up to date. Each section's ?
+     button tours just that section. The bubble text is ordinary page text, so a browser's
+     auto-translate translates it. */
+  var tour = null;
+  function helpStops(root){
+    return Array.prototype.filter.call((root || document).querySelectorAll('[data-help]'), function(el){
+      if (!el.getAttribute('data-help').trim() || el.closest('[hidden]')) return false;
+      var r = el.getBoundingClientRect();
+      return r.width > 0 && r.height > 0;
+    });
+  }
+  function startTour(root){
+    if (burning) return;
+    var stops = helpStops(root);
+    if (!stops.length) return;
+    tour = { stops: stops, k: 0 };
+    $('tourNote').hidden = true;
+    $('tourLayer').hidden = false;
+    showStop();
+    $('tourNext').focus();
+  }
+  function endTour(){
+    if (!tour) return;
+    tour = null;
+    $('tourLayer').hidden = true;
+    try { localStorage.setItem('tourSeen', '1'); } catch (e) {}
+  }
+  function showStop(){
+    var el = tour.stops[tour.k];
+    el.scrollIntoView({ block: 'center', behavior: 'auto' });
+    $('tourText').textContent = el.getAttribute('data-help');
+    $('tourCount').textContent = (tour.k + 1) + ' of ' + tour.stops.length;
+    $('tourBack').disabled = tour.k === 0;
+    $('tourNext').textContent = tour.k === tour.stops.length - 1 ? 'Done' : 'Next';
+    placeTour();
+    setTimeout(placeTour, 60); setTimeout(placeTour, 350);   // again once scrolling has settled
+  }
+  // The ring goes round the stop; the bubble sits below it (or above when there's no room),
+  // inside the screen, with its arrow pointing at the stop.
+  function placeTour(){
+    if (!tour) return;
+    var el = tour.stops[tour.k], r = el.getBoundingClientRect(), pad = 6, gap = 14;
+    var ring = $('tourRing'), bub = $('tourBubble'), vw = document.documentElement.clientWidth, vh = window.innerHeight;
+    ring.style.left = (r.left - pad) + 'px'; ring.style.top = (r.top - pad) + 'px';
+    ring.style.width = (r.width + pad * 2) + 'px'; ring.style.height = (r.height + pad * 2) + 'px';
+    var w = Math.min(340, vw - 24);
+    bub.style.width = w + 'px';
+    var bh = bub.offsetHeight, below = r.bottom + pad + gap + bh <= vh - 8, top;
+    if (below) top = r.bottom + pad + gap;
+    else if (r.top - pad - gap - bh >= 8) top = r.top - pad - gap - bh;
+    else top = Math.max(8, Math.min(vh - bh - 8, r.top + 12));   // a stop taller than the screen: over its top
+    var left = Math.min(Math.max(12, r.left + r.width / 2 - w / 2), vw - w - 12);
+    bub.style.top = top + 'px'; bub.style.left = left + 'px';
+    bub.style.setProperty('--ax', Math.min(Math.max(18, r.left + r.width / 2 - left), w - 18) + 'px');
+    bub.classList.toggle('above', !below && top < r.top);
+  }
+  $('tourNext').addEventListener('click', function(){
+    if (!tour) return;
+    if (tour.k >= tour.stops.length - 1) endTour(); else { tour.k++; showStop(); }
+  });
+  $('tourBack').addEventListener('click', function(){ if (tour && tour.k > 0){ tour.k--; showStop(); } });
+  $('tourSkip').addEventListener('click', endTour);
+  document.addEventListener('keydown', function(e){ if (tour && e.key === 'Escape') endTour(); });
+  window.addEventListener('resize', placeTour);
+  window.addEventListener('scroll', placeTour, { passive: true });
+  // A ? on every section heading tours that section.
+  Array.prototype.forEach.call(document.querySelectorAll('section.step'), function(sec){
+    var h = sec.querySelector('h2'); if (!h) return;
+    var b = document.createElement('button'); b.type = 'button'; b.className = 'help-btn'; b.textContent = '?';
+    b.setAttribute('aria-label', 'Help for ' + h.textContent.replace(/^\s*\d+\s*/, ''));
+    b.addEventListener('click', function(){ startTour(sec); });
+    h.appendChild(b);
+  });
+  // "Show the tour again", under the last section.
+  (function(){
+    var p = document.createElement('p'); p.className = 'tour-again';
+    var b = document.createElement('button'); b.type = 'button'; b.className = 'linkish'; b.id = 'tourAgain'; b.textContent = 'Show the tour again';
+    b.addEventListener('click', function(){ startTour(); });
+    p.appendChild(b); $('burnCard').after(p);
+  })();
+  // First visit: offer the tour (not while the Restore note is asking something).
+  (function(){
+    var seen = false; try { seen = localStorage.getItem('tourSeen') === '1'; } catch (e) {}
+    if (!seen && $('restoreNote').hidden) $('tourNote').hidden = false;
+  })();
+  $('tourStart').addEventListener('click', function(){ startTour(); });
+  $('tourNo').addEventListener('click', function(){
+    $('tourNote').hidden = true;
+    try { localStorage.setItem('tourSeen', '1'); } catch (e) {}
+  });
+
   // Tests only (page opened with ?test).
   if (/[?&]test\b/.test(location.search)) window.__sb = { parseGeminiBlocks: parseGeminiBlocks, requestText: requestText, defaultLangName: defaultLangName,
     langFor: langFor, wrapLines: wrapLines, wordUnits: wordUnits, splitLines: splitLines, dispLen: dispLen,
@@ -4752,7 +4876,7 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
   if (window.__sb) Object.assign(window.__sb, { envNoteFor: envNoteFor, pageEnv: pageEnv, showEnvNote: showEnvNote, canShare: function(){ return canShareFiles; } });
   if (window.__sb) Object.assign(window.__sb, { orderedParts: orderedParts, moveClip: moveClip, partsFromTicks: partsFromTicks, momentsOf: momentsOf, tweetTextOf: tweetTextOf,
     findSpeech: findSpeech, findSpeechDb: findSpeechDb, decodeAudio16k: decodeAudio16k, speechDbLong: speechDbLong,
-    file: function(){ return videoFile; }, setForceLong: function(v){ forceLongSound = !!v; }, saveSession: saveSession, sessionState: sessionState });
+    file: function(){ return videoFile; }, setForceLong: function(v){ forceLongSound = !!v; }, saveSession: saveSession, sessionState: sessionState, startTour: startTour, helpStops: helpStops, tourState: function(){ return tour && { k: tour.k, n: tour.stops.length, el: tour.stops[tour.k] }; } });
 })();
 </script>
 </body>
