@@ -228,7 +228,7 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
 .moment-list li.c3{border-left-color:#D946A8}
 .cue-head .cue-use + .cue-use{margin-left:6px}
 .moment-head{font-weight:700}
-.moment-words{color:var(--muted);font-size:16px;margin:2px 0 4px}
+.moment-words{color:var(--muted);font-size:16px;margin:2px 0 4px;white-space:pre-line}
 .cue-list.locked .cue-row:not(.editing) .cue-text{pointer-events:none;color:var(--muted);background:transparent;border-color:transparent}
 .cue-note{margin:0 0 6px;font-size:15px;color:var(--warn)}
 .edit-row{display:flex;flex-wrap:wrap;gap:6px 18px;margin:6px 0 8px}
@@ -4118,7 +4118,9 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
       var head = document.createElement('div'); head.className = 'moment-head';
       head.textContent = (joined ? '+ also in clip ' : 'Clip ') + n + ' · ' + fmt(p.a) + '–' + fmt(p.b) + ' (' + fmt(p.b - p.a) + ')';
       var words = document.createElement('div'); words.className = 'moment-words';
-      words.textContent = snippet(cues[p.first] && cues[p.first].text);
+      // every ticked line of the part, one per row
+      words.textContent = cues.slice(p.first, p.last + 1).filter(function(c){ return c.use; })
+        .map(function(c){ return c.text.replace(/\s+/g, ' ').trim(); }).join('\n');
       li.appendChild(head); li.appendChild(words);
       if (k > 0){
         var lab = document.createElement('label'); lab.className = 'check';
