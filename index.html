@@ -463,7 +463,7 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
       <p class="label" style="margin-top:16px">Your subtitles</p>
       <p class="hint" style="margin:4px 0 8px">Tick Keep on the lines you want in a cut (step 4). Tick Edit on a line (or Edit all lines) to change its words or times. Make timings starts over from the box above.</p>
       <div class="edit-row">
-        <label class="check"><input id="editLines" type="checkbox"> Edit all lines</label>
+        <label class="check" data-help="Edit all lines unlocks every line at once. Also fix the pasted text writes your fixes back into the text you pasted."><input id="editLines" type="checkbox"> Edit all lines</label>
         <label class="check" id="writeBackRow"><input id="writeBack" type="checkbox" checked> Also fix the pasted text</label>
       </div>
       <div class="row" id="shiftRow"><button class="btn" id="shiftEarlier" type="button">All 0.25 s earlier</button><button class="btn" id="shiftLater" type="button">All 0.25 s later</button></div>
@@ -4682,6 +4682,7 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
   }
   function hasWork(s){ return s.cues.length > 0 || !!s.autoText.trim() || !!s.pasteText.trim(); }
   function saveSession(){
+    if (tourDemo) return;   // the tour's example lines aren't anyone's work
     var s = sessionState();
     if (!hasWork(s)) return;
     if (sessionOffer){   // new work while the Restore note waits: keep the old work aside
@@ -4781,6 +4782,51 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
      and a removed one leaves it, with no separate list to keep up to date. Each section's ?
      button tours just that section. The bubble text is ordinary page text, so a browser's
      auto-translate translates it. */
+  /* Example lines for the tour. The line list and the clip tools only exist once there are
+     lines, so a tour started without any puts in four example lines (some ticked, Separate
+     clips) and takes them out again when it ends, leaving everything as it was. Autosave
+     skips while they're there. */
+  var tourDemo = null;
+  var DEMO_SRT = '1\n00:00:01,000 --> 00:00:03,500\nHi everyone, welcome back!\n\n' +
+    '2\n00:00:03,700 --> 00:00:06,500\nToday I want to tell you something fun.\n\n' +
+    '3\n00:00:06,700 --> 00:00:09,000\nIt happened at the airport.\n\n' +
+    '4\n00:00:12,000 --> 00:00:14,500\nSee you next time!\n';
+  function pressClipMode(v){ Array.prototype.forEach.call(document.querySelectorAll('[data-clkey] button'), function(b){ setPressed(b, b.dataset.val === v); }); }
+  function demoStart(){
+    if (cues.length || tourDemo) return;
+    tourDemo = { pasteText: $('pasteArea').value, srt: [$('srtStatus').textContent, $('srtStatus').className],
+                 clipMode: clipMode, clipOrder: clipOrder, editAll: $('editLines').checked };
+    loadSubs(DEMO_SRT, 'the tour’s example');
+    cues[0].use = true; cues[1].use = true; cues[3].use = true;   // two clips: lines 1–2 and line 4
+    clipMode = 'separate'; pressClipMode('separate');             // not remembered
+    $('editLines').checked = false;                               // so each line shows its Edit tick
+    renderCueList(); updateParts();
+  }
+  function demoEnd(){
+    if (!tourDemo) return;
+    var d = tourDemo; tourDemo = null;
+    cues = []; geminiBlocks = [];
+    clipMode = d.clipMode; clipOrder = d.clipOrder; pressClipMode(d.clipMode);
+    $('editLines').checked = d.editAll;
+    $('pasteArea').value = d.pasteText;
+    $('srtStatus').textContent = d.srt[0]; $('srtStatus').className = d.srt[1];
+    $('autoReview').hidden = true;
+    renderCueList(); updateParts(); redraw(); updateBurnState();
+  }
+  // Help for parts the page builds itself (the first line's ticks, the clip tools).
+  function markGeneratedHelp(){
+    function put(sel, text){ var el = document.querySelector(sel); if (el) el.setAttribute('data-help', text); }
+    put('#cueList .cue-row .cue-use', 'Keep: tick the lines you want in your video. Lines ticked next to each other become one part.');
+    put('#cueList .cue-row .cue-use + .cue-use', 'Edit unlocks this one line, so you can fix its words or its start and end times.');
+    put('#momentList .drag-handle', 'Drag a clip by ⠿ to change the order. The list order is the order things play in.');
+    put('#momentList .split-tick', 'New clip from here starts a new clip at this line, even in the middle of lines ticked in a row.');
+    put('#momentList .join-tick', 'Join with the clip above makes this clip part of the one above it, so moments from different times play as one video.');
+  }
+  // The tour is offered on a first visit, and again once the Restore note is answered.
+  function offerTour(){
+    var seen = false; try { seen = localStorage.getItem('tourSeen') === '1'; } catch (e) {}
+    if (!seen && !tour && $('restoreNote').hidden) $('tourNote').hidden = false;
+  }
   var tour = null;
   function helpStops(root){
     return Array.prototype.filter.call((root || document).querySelectorAll('[data-help]'), function(el){
@@ -4791,8 +4837,9 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
   }
   function startTour(root){
     if (burning) return;
+    demoStart(); markGeneratedHelp();
     var stops = helpStops(root);
-    if (!stops.length) return;
+    if (!stops.length){ demoEnd(); return; }
     tour = { stops: stops, k: 0 };
     $('tourNote').hidden = true;
     $('tourLayer').hidden = false;
@@ -4803,12 +4850,14 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
     if (!tour) return;
     tour = null;
     $('tourLayer').hidden = true;
+    demoEnd();
     try { localStorage.setItem('tourSeen', '1'); } catch (e) {}
   }
   function showStop(){
     var el = tour.stops[tour.k];
     el.scrollIntoView({ block: 'center', behavior: 'auto' });
-    $('tourText').textContent = el.getAttribute('data-help');
+    var lead = !tourDemo ? '' : el.id === 'cueList' ? 'These are example lines; yours appear here. ' : el.id === 'clipBox' ? 'Example clips. ' : '';
+    $('tourText').textContent = lead + el.getAttribute('data-help');
     $('tourCount').textContent = (tour.k + 1) + ' of ' + tour.stops.length;
     $('tourBack').disabled = tour.k === 0;
     $('tourNext').textContent = tour.k === tour.stops.length - 1 ? 'Done' : 'Next';
@@ -4858,11 +4907,10 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
     b.addEventListener('click', function(){ startTour(); });
     p.appendChild(b); $('burnCard').after(p);
   })();
-  // First visit: offer the tour (not while the Restore note is asking something).
-  (function(){
-    var seen = false; try { seen = localStorage.getItem('tourSeen') === '1'; } catch (e) {}
-    if (!seen && $('restoreNote').hidden) $('tourNote').hidden = false;
-  })();
+  // First visit: offer the tour; with a Restore note up, offer it once that's answered.
+  offerTour();
+  $('restoreYes').addEventListener('click', offerTour);
+  $('restoreNo').addEventListener('click', offerTour);
   $('tourStart').addEventListener('click', function(){ startTour(); });
   $('tourNo').addEventListener('click', function(){
     $('tourNote').hidden = true;
@@ -4876,7 +4924,7 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
   if (window.__sb) Object.assign(window.__sb, { envNoteFor: envNoteFor, pageEnv: pageEnv, showEnvNote: showEnvNote, canShare: function(){ return canShareFiles; } });
   if (window.__sb) Object.assign(window.__sb, { orderedParts: orderedParts, moveClip: moveClip, partsFromTicks: partsFromTicks, momentsOf: momentsOf, tweetTextOf: tweetTextOf,
     findSpeech: findSpeech, findSpeechDb: findSpeechDb, decodeAudio16k: decodeAudio16k, speechDbLong: speechDbLong,
-    file: function(){ return videoFile; }, setForceLong: function(v){ forceLongSound = !!v; }, saveSession: saveSession, sessionState: sessionState, startTour: startTour, helpStops: helpStops, tourState: function(){ return tour && { k: tour.k, n: tour.stops.length, el: tour.stops[tour.k] }; } });
+    file: function(){ return videoFile; }, setForceLong: function(v){ forceLongSound = !!v; }, saveSession: saveSession, sessionState: sessionState, startTour: startTour, helpStops: helpStops, tourState: function(){ return tour && { k: tour.k, n: tour.stops.length, el: tour.stops[tour.k] }; }, tourDemoOn: function(){ return !!tourDemo; } });
 })();
 </script>
 </body>
