@@ -240,6 +240,10 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
 .moment-list li.drop-above{box-shadow:0 -4px 0 var(--accent)}
 .moment-list li.drop-below{box-shadow:0 4px 0 var(--accent)}
 .clip-part.joined{margin-top:10px;padding-top:8px;border-top:2px dashed var(--line)}
+.clip-head{flex-wrap:wrap}
+.clip-head .include-tick{margin-top:0;font-size:15px}
+.clip.skipped .clip-part,.clip.skipped .moment-head{opacity:.45}
+#copyStatus:empty{display:none}
 .part-time{font-weight:700;font-size:15px;color:var(--muted);margin:2px 0}
 .check.split-tick{font-size:13px;gap:6px;color:var(--muted);margin-top:0}
 .check.split-tick input{width:18px;height:18px}
@@ -408,6 +412,13 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
       <label class="btn" id="videoBtn2">From files<input id="videoInput2" type="file" accept="*/*"></label>
     </div>
     <p class="status" id="videoStatus">No video yet.</p>
+    <p class="hint" id="copyStatus"></p>
+    <label data-help="Keeps a copy of your video in the app, so after a crash or reload it comes back by itself. Uses phone space the size of the video; the next video you pick replaces it." class="check"><input id="keepVideo" type="checkbox"> Keep my video for next time</label>
+    <div class="pair" style="margin-top:12px">
+      <button data-help="Saves your lines, ticks, look, crop and credit as a small file in Downloads, to open again later." class="btn small" id="saveWork" type="button">Save work to a file</button>
+      <label data-help="Opens a work file you saved before. If its video isn’t open, you’ll be asked to choose it." class="btn small" id="openWorkBtn">Open saved work<input id="openWork" type="file"></label>
+    </div>
+    <p class="status" id="workStatus"></p>
   </section>
 
   <section class="step">
@@ -631,6 +642,7 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
       <p class="status warn" id="burnErrorText"></p>
       <p class="details" id="burnErrorDetails"></p>
       <button class="btn" id="realtimeBtn" type="button">Burn in real time instead</button>
+      <button data-help="Opens your gallery to pick the same video again after the phone stopped letting the app read it." class="btn primary" id="repickBtn" type="button" hidden>Pick the video again</button>
     </div>
 
     <div id="progress" hidden>
@@ -1410,11 +1422,105 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
   $('cropAspects').addEventListener('click', function(e){ var b = e.target.closest('button'); if (b && cropEditing) fitAspect(b.dataset.asp); });
   window.addEventListener('resize', layoutCrop);
 
+  /* ---------- Private copy of the video ----------
+     On Android a picked file is only a link to the phone's file, and the phone can take the
+     page's right to read it away at any time (after saving a file, switching apps, or just
+     time passing); every later read then fails with NotReadableError and never recovers.
+     So right after a pick the video is copied into this site's private storage (OPFS) and
+     every read uses the copy. No room or no OPFS: the original file is used, as before.
+     "Keep my video for next time" keeps the copy after the page closes, so a restored
+     session can reopen it; with it off, a leftover copy is deleted at start. */
+  var COPY_NAME = 'video-copy', videoCopy = null, copyGen = 0, origURL = null, reopenNote = false, burnWaiting = false;
+  function copyDir(){ return navigator.storage && navigator.storage.getDirectory ? navigator.storage.getDirectory() : Promise.reject(new Error('no private storage')); }
+  function keepOn(){ try { return localStorage.getItem('keepVideo') === '1'; } catch (e) { return false; } }
+  async function dropCopy(){
+    try { var d = await copyDir(); await d.removeEntry(COPY_NAME); } catch (e) {}
+    try { localStorage.removeItem('keptVideo'); } catch (e) {}
+  }
+  function copyStatus(job){
+    var el = $('copyStatus');
+    if (!job.done) el.textContent = 'Making a safe copy of the video for burning… ' + job.pct + '%';
+    else el.textContent = !job.file && keepOn() ? 'There wasn’t room to keep a copy of this video, so it can’t come back by itself.' : '';
+    if (burnWaiting) $('burnHint').textContent = job.done ? 'Starting…' : 'Getting your video ready… ' + job.pct + '%';
+  }
+  // Starts copying f. job.promise resolves to the copy (a File named like f) or null.
+  function startCopy(f){
+    var prev = videoCopy && !videoCopy.done ? videoCopy.promise : null;
+    var gen = ++copyGen, job = { pct: 0, done: false, file: null };
+    job.promise = (async function(){
+      var d = null, w = null;
+      try {
+        if (prev) await prev;   // the old copy stops at its next piece; wait so its file is free
+        d = await copyDir();
+        try { await d.removeEntry(COPY_NAME); } catch (e) {}
+        try { localStorage.removeItem('keptVideo'); } catch (e) {}
+        if (gen !== copyGen) throw new Error('replaced');
+        if (navigator.storage.estimate){
+          var est = await navigator.storage.estimate();
+          if (est.quota && est.quota - (est.usage || 0) < f.size + 50 * 1048576) throw new Error('not enough room');
+        }
+        var h = await d.getFileHandle(COPY_NAME, { create: true });
+        w = await h.createWritable();
+        var r = f.stream().getReader(), got = 0, shown = -1;
+        for (;;){
+          var x = await r.read();
+          if (x.done) break;
+          if (gen !== copyGen){ try { r.cancel(); } catch (e) {} throw new Error('replaced'); }
+          await w.write(x.value); got += x.value.byteLength;
+          job.pct = f.size ? Math.min(99, Math.floor(got / f.size * 100)) : 0;
+          if (job.pct !== shown){ shown = job.pct; copyStatus(job); }
+        }
+        await w.close(); w = null;
+        var c = await h.getFile();
+        if (c.size !== f.size) throw new Error('the copy is incomplete');
+        if (gen !== copyGen) throw new Error('replaced');
+        job.file = new File([c], f.name, { type: f.type || 'video/mp4', lastModified: f.lastModified });
+        try { localStorage.setItem('keptVideo', JSON.stringify({ name: f.name, size: f.size, type: f.type || '', lastModified: f.lastModified })); } catch (e) {}
+        return job.file;
+      } catch (e){
+        if (w){ try { await w.abort(); } catch (x) {} }
+        if (d && gen === copyGen){ try { await d.removeEntry(COPY_NAME); } catch (x) {} }
+        if (String(e && e.message) !== 'replaced') console.warn('Video copy skipped, using the picked file:', e);
+        return null;
+      } finally {
+        job.done = true;
+        if (gen === copyGen) copyStatus(job);
+      }
+    })();
+    return job;
+  }
+  // The kept copy, when "Keep my video" is on and it is the video v ({ name, size }); else null.
+  async function keptCopyFor(v){
+    if (!v || !keepOn()) return null;
+    var m = null; try { m = JSON.parse(localStorage.getItem('keptVideo') || 'null'); } catch (e) {}
+    if (!m || m.name !== v.name || m.size !== v.size) return null;
+    try {
+      var d = await copyDir(), c = await (await d.getFileHandle(COPY_NAME)).getFile();
+      if (c.size !== m.size) return null;
+      return new File([c], m.name, { type: m.type || 'video/mp4', lastModified: m.lastModified });
+    } catch (e) { return null; }
+  }
+  // Did reading the video fail because the phone took away the page's access?
+  function readLost(e){
+    var s = e ? (e.name || '') + ' ' + (e.message || '') + ' ' + String(e) : '';
+    return /NotReadableError|NotFoundError|could not be read|could not be found/i.test(s);
+  }
+  if (!keepOn()) dropCopy();
+  (function(){
+    var kv = $('keepVideo');
+    kv.checked = keepOn();
+    kv.addEventListener('change', function(){
+      try { localStorage.setItem('keepVideo', kv.checked ? '1' : '0'); } catch (e) {}
+      if (kv.checked) return;
+      var inUse = videoCopy && (!videoCopy.done || (videoCopy.file && videoFile === videoCopy.file));
+      if (!inUse) dropCopy();   // the copy in use is deleted at the next start instead
+    });
+  })();
   /* ---------- Video loading ---------- */
-  function onVideoPicked(e){
-    var f = e.target.files && e.target.files[0];
-    if (!f) return;
+  // Opens f as the video. fromCopy: f is the kept private copy, so it isn't copied again.
+  function openVideo(f, fromCopy){
     if (videoURL) URL.revokeObjectURL(videoURL);
+    if (origURL){ URL.revokeObjectURL(origURL); origURL = null; }
     videoURL = URL.createObjectURL(f);
     videoFile = f;
     videoName = f.name.replace(/\.[^.]+$/, '') || 'video';
@@ -1423,6 +1529,20 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
     setStatus($('videoStatus'), 'Opening ' + f.name + '…');
     video.src = videoURL;
     video.load();
+    if (fromCopy){ copyGen++; videoCopy = { done: true, pct: 100, file: f, promise: Promise.resolve(f) }; $('copyStatus').textContent = ''; return; }
+    videoCopy = startCopy(f);
+    videoCopy.promise.then(function(c){
+      if (!c || videoFile !== f) return;
+      videoFile = c;   // every read now uses the copy
+      var u = URL.createObjectURL(c);
+      if (cropFor === videoURL) cropFor = u;   // same video: keep its crop when the preview reloads
+      origURL = videoURL; videoURL = u;        // the preview switches at its next reload
+    });
+  }
+  function onVideoPicked(e){
+    var f = e.target.files && e.target.files[0];
+    if (!f) return;
+    openVideo(f, false);
     e.target.value = '';
   }
   $('videoInput').addEventListener('change', onVideoPicked);
@@ -1437,6 +1557,7 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
     previewSize();
     hasVideo = true;
     setStatus($('videoStatus'), videoName + ', ' + fmt(video.duration) + ' long, ' + vw + ' × ' + vh + '.', 'ok');
+    if (reopenNote){ reopenNote = false; setStatus($('videoStatus'), 'Reopened from the app’s copy: ' + $('videoStatus').textContent, 'ok'); }
     checkSessionVideo();
     $('playBtn').disabled = false; $('scrub').disabled = false; $('miniPlay').disabled = false; $('miniScrub').disabled = false;
     video.currentTime = recoverAt !== null ? Math.min(recoverAt, video.duration || 0) : Math.min(0.05, video.duration || 0);
@@ -3180,12 +3301,13 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
   /* ---------- Burning ---------- */
   function updateBurnState(){
     var ready = hasVideo && cues.length > 0, cutting = cues.some(function(c){ return c.use; });
-    $('burnBtn').disabled = !ready || burning;
-    var nClips = cutting && clipMode === 'separate' ? momentsOf(orderedParts(partsFromTicks())).length : 1, both = makeChoice === 'both';
+    var nClips = cutting && clipMode === 'separate' ? momentsOf(orderedParts(partsFromTicks())).filter(function(m){ return !m.skip; }).length : 1, both = makeChoice === 'both';
+    $('burnBtn').disabled = !ready || burning || nClips === 0;
     $('burnBtn').textContent = !cutting ? 'Burn subtitles'
       : nClips > 1 ? 'Make ' + nClips * (both ? 2 : 1) + ' videos (' + nClips + ' clips, ' + (both ? 'with and without subtitles' : makeChoice === 'nosubs' ? 'without subtitles' : 'with subtitles') + ')'
       : both ? 'Make both videos' : makeChoice === 'nosubs' ? 'Make the cut without subtitles' : 'Make the cut with subtitles';
     $('burnHint').textContent = !ready ? 'Choose a video and subtitles first.'
+      : nClips === 0 ? 'All clips are left out. Tick Include on at least one clip in step 4.'
       : cutting ? 'Cuts out the ticked parts and joins them, frame by frame. Keep this screen open until it’s done.'
       : 'Works through the video frame by frame and keeps the original sound. Keep this screen open until it’s done.';
   }
@@ -3196,6 +3318,7 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
     $('videoBtn').classList.toggle('disabled', on);
     $('videoBtn2').classList.toggle('disabled', on);
     $('srtBtn').classList.toggle('disabled', on);
+    $('openWorkBtn').classList.toggle('disabled', on);
     Array.prototype.forEach.call(document.querySelectorAll('.seg button, .cue-text, .cue-use input, .block-head input, .style-ui button, .style-ui input, .moment-list input, .drag-handle'), function(b){ b.disabled = on; });
     $('burnBtn').hidden = on;
     $('burnHint').hidden = on;
@@ -3365,7 +3488,11 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
     if (!('VideoDecoder' in window && 'VideoEncoder' in window && 'VideoFrame' in window && 'EncodedVideoChunk' in window))
       throw new Error('this browser can’t process video frame by frame');
     var src;
-    try { src = await MP4.parse(videoFile); } catch (e) { throw new Error('the video isn’t an MP4 or MOV file'); }
+    try { src = await MP4.parse(videoFile); }
+    catch (e){
+      if (readLost(e)){ var le = new Error('the phone stopped letting the app read the video (' + ((e && e.name) || '') + ')'); le.lost = true; throw le; }
+      throw new Error('the video isn’t an MP4 or MOV file');
+    }
     var vt = src.tracks.filter(function(t){ return t.handler === 'vide' && t.samples.length; })[0];
     if (!vt) throw new Error('no picture track was found in the video file');
     var at = src.tracks.filter(function(t){ return t.handler === 'soun' && t.samples.length; })[0] || null;
@@ -3904,16 +4031,26 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
     });
   }
 
-  function showBurnError(plan, tries){
+  function showBurnError(plan, tries, lost){
     var info = plan ? plan.info : null;
-    $('burnErrorText').textContent = 'Frame-by-frame burning didn’t work on this device. Your video wasn’t changed.';
+    $('burnErrorText').textContent = lost
+      ? 'Your phone stopped letting the app read the video. This can happen after saving a file or switching apps. Pick the same video again in step 1, then tap Make again.' +
+        ' Videos already made are kept' + (clipMode === 'separate' ? '; untick their clips in step 4 so they aren’t made twice.' : '.')
+      : 'Frame-by-frame burning didn’t work on this device. Your video wasn’t changed.';
     $('burnErrorDetails').textContent = 'Details to send Claude: ' +
       (info ? 'video ' + info.name + ' ' + info.codec + ', ' + info.width + ' × ' + info.height +
-        (plan.rot ? ', turned ' + plan.rot + '°' : '') + ', ' + Math.round(plan.fps) + ' fps. ' : '') +
+        (plan.rot ? ', turned ' + plan.rot + '°' : '') + (isFull(crop) ? '' : ', picture cropped') + ', ' + Math.round(plan.fps) + ' fps. ' : '') +
       'Tried: ' + tries.join(' | ') + '. Browser: ' + navigator.userAgent;
+    $('realtimeBtn').hidden = !!lost;
+    $('repickBtn').hidden = !lost;
     $('burnError').hidden = false;
     $('burnError').scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
+  $('repickBtn').addEventListener('click', function(){
+    if (burning) return;
+    $('burnError').hidden = true;
+    $('videoInput').click();
+  });
   $('realtimeBtn').addEventListener('click', function(){
     if (burning || !hasVideo) return;
     $('burnError').hidden = true;
@@ -3922,7 +4059,11 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
 
   $('burnBtn').addEventListener('click', async function(){
     if (cropEditing) finishCrop();
-    if (!hasVideo || !cues.length || burning) return;
+    if (!hasVideo || !cues.length || burning || burnWaiting) return;
+    if (videoCopy && !videoCopy.done){   // the safe copy is still being made: wait for it
+      burnWaiting = true; copyStatus(videoCopy);
+      try { await videoCopy.promise; } finally { burnWaiting = false; }
+    }
     try { await document.fonts.load(fontFor(64)); } catch (e) {}   // the style's font must be ready before frame 1
     stopCutPlay();
     clearResult();
@@ -3930,8 +4071,9 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
     cancelled = false;
     video.pause();
     var parts = partsFromTicks(), cut = parts.length > 0, make = cut ? makeChoice : 'subs';
-    var plan = null, why = '';
-    try { plan = await planFrames(); } catch (e) { why = e.message || String(e); }
+    var plan = null, why = '', lostAt = false;
+    try { plan = await planFrames(); } catch (e) { why = e.message || String(e); lostAt = !!e.lost; }
+    if (!plan && lostAt){ showBurnError(null, ['reading the video: ' + why], true); return; }
     if (!plan){
       if (cut){ $('burnHint').textContent = 'Cutting needs frame-by-frame processing, which this browser can’t do (' + why + ').'; return; }
       console.warn('Frame-by-frame burn unavailable:', why);
@@ -3939,7 +4081,9 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
     }
     // Separate clips: each clip (a part, or parts joined) becomes its own video(s).
     var groups = cut && clipMode === 'separate' ? momentsOf(orderedParts(parts)) : [{ parts: parts, first: -1, last: -1 }];
-    var many = groups.length > 1;
+    var many = groups.length > 1;   // numbered by the full list, left-out clips included
+    groups = groups.filter(function(g){ return !g.skip; });
+    if (!groups.length){ $('burnHint').textContent = 'All clips are left out. Tick Include on at least one clip in step 4.'; return; }
     plan.segs = planSegments(plan, groups[0].parts);
     if (!plan.segs.list.length){ $('burnHint').textContent = 'The ticked lines are outside the video. Check their times.'; return; }
     var kinds = make === 'both' ? ['subs', 'nosubs'] : [make];
@@ -3950,7 +4094,7 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
     $('progLeft').textContent = 'Starting… Keep this screen open until it’s done.';
     releasePreview();
     await requestWake();
-    var store = soundStore(plan.at), tries = [], vi = 0, failed = false, results = [], stamp = nameStamp();
+    var store = soundStore(plan.at), tries = [], vi = 0, failed = false, lost = false, results = [], stamp = nameStamp();
     var total = groups.length * kinds.length, nth = 0;
     for (var gi = 0; gi < groups.length && !cancelled && !failed; gi++){
       if (gi > 0) plan.segs = planSegments(plan, groups[gi].parts);
@@ -3967,6 +4111,7 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
             if (cancelled) break;
             console.warn('Frame-by-frame burn failed with', v.label, v.cfg, e);
             tries.push(v.label + ' ' + v.cfg.codec + ' ' + v.cfg.width + '×' + v.cfg.height + ': ' + ((e && e.message) || String(e)));
+            if (readLost(e)){ lost = true; break; }   // other settings can't help: the file can't be read
           }
         }
         if (res){ vi--; made.push(res); }   // the next video starts with the settings that worked
@@ -3979,7 +4124,7 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
         $('progLeft').textContent = many ? 'Clip ' + (gi + 1) + ' of ' + groups.length + ' almost done.' : 'Almost done.';
         var sound = cut ? await cutSound(plan, store) : await wholeSound(plan, store);
         for (var m = 0; m < made.length; m++){
-          var clip = many ? { n: gi + 1, of: groups.length } : null;
+          var clip = many ? { n: groups[gi].n, of: groups[gi].of } : null;
           results.push({ blob: await finishMp4(plan, made[m], sound), kind: made[m].kind, clip: clip,
             lines: many ? groups[gi].lines : null,
             name: outName(made[m].kind, cut, plan.segs.total, clip, stamp),
@@ -3990,6 +4135,7 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
       } catch (e){
         console.warn('Finishing failed:', e);
         tries.push('finishing: ' + ((e && e.message) || String(e)));
+        if (readLost(e)) lost = true;
         failed = true;
       }
     }
@@ -4001,9 +4147,9 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
     restorePreviewSize();
     setBusy(false);
     if (cancelled) return;
-    if (!results.length){ showBurnError(plan, tries); return; }
+    if (!results.length){ showBurnError(plan, tries, lost); return; }
     showResults(results, 'ok');
-    if (failed) showBurnError(plan, tries);   // the clips made before the problem are kept
+    if (failed) showBurnError(plan, tries, lost);   // the clips made before the problem are kept
   });
 
   async function burnRealtime(why){
@@ -4233,9 +4379,16 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
       var m = out[out.length - 1], lines = [];
       for (var i = p.first; i <= p.last; i++) if (cues[i] && cues[i].use) lines.push(i);
       if (m && k > 0 && cues[p.first] && cues[p.first].joinPrev){ m.parts.push(p); m.lines = m.lines.concat(lines); m.last = Math.max(m.last, p.last); m.len += p.b - p.a; }
-      else out.push({ parts: [p], lines: lines, first: p.first, last: p.last, a: p.a, b: p.b, len: p.b - p.a });
+      else out.push({ parts: [p], lines: lines, first: p.first, last: p.last, a: p.a, b: p.b, len: p.b - p.a, skip: !!(cues[p.first] && cues[p.first].skipClip) });
     });
+    out.forEach(function(m, i){ m.n = i + 1; m.of = out.length; if (out.length < 2) m.skip = false; });
     return out;
+  }
+  // Separate clips unticked with "Include this clip" are left out of Make, Play the cut and the tweet text.
+  function skippedClips(){ return clipMode === 'separate' ? momentsOf(orderedParts(partsFromTicks())).filter(function(m){ return m.skip; }) : []; }
+  function includedParts(parts){
+    var out = {}; skippedClips().forEach(function(m){ m.parts.forEach(function(p){ out[p.first] = true; }); });
+    return parts.filter(function(p){ return !out[p.first]; });
   }
   function snippet(s){ s = String(s || '').replace(/\s+/g, ' ').trim(); return s.length > 60 ? s.slice(0, 57) + '…' : s; }
   // One box per clip, with a drag handle; joined parts inside it, each line its own row.
@@ -4250,12 +4403,18 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
       return lab;
     }
     clips.forEach(function(m, n){
-      var li = document.createElement('li'); li.className = 'clip c' + (n % 4); li.dataset.clip = String(n);
+      var li = document.createElement('li'); li.className = 'clip c' + (n % 4) + (m.skip ? ' skipped' : ''); li.dataset.clip = String(n);
       var head = document.createElement('div'); head.className = 'clip-head';
       var title = document.createElement('div'); title.className = 'moment-head';
       var p0 = m.parts[0];
       title.textContent = 'Clip ' + (n + 1) + ' · ' + (m.parts.length === 1 ? fmt(p0.a) + '–' + fmt(p0.b) + ' (' + fmt(m.len) + ')' : fmt(m.len) + ', ' + m.parts.length + ' parts');
       head.appendChild(title);
+      if (m.skip) title.textContent += ' · left out';
+      if (clips.length > 1){
+        var inc = tick('include-tick', 'Include this clip', 'skip', p0.first, !m.skip);
+        if (n === 0) inc.setAttribute('data-help', 'Untick a clip to leave it out: it won’t be made, played or put in the tweet text.');
+        head.appendChild(inc);
+      }
       if (clips.length > 1){
         var h = document.createElement('button'); h.type = 'button'; h.className = 'drag-handle'; h.textContent = '⠿'; h.disabled = burning;
         h.setAttribute('aria-label', 'Drag to move clip ' + (n + 1)); head.appendChild(h);
@@ -4336,6 +4495,11 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
   });
   $('momentList').addEventListener('change', function(e){
     var t = e.target; if (!t.dataset || burning) return;
+    if (t.dataset.skip !== undefined){
+      var sc = cues[Number(t.dataset.skip)];
+      if (sc){ if (t.checked) delete sc.skipClip; else sc.skipClip = true; }
+      updateParts(); return;
+    }
     if (t.dataset.split !== undefined){
       var s = cues[Number(t.dataset.split)];
       if (s){ s.splitHere = t.checked; if (t.checked) s.joinPrev = false; }
@@ -4351,13 +4515,14 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
     var parts = partsFromTicks(), dur = video.duration || 0, ticked = cues.filter(function(c){ return c.use; }).length;
     var total = parts.reduce(function(s, p){ return s + p.b - p.a; }, 0);
     var sep = clipMode === 'separate' && parts.length >= 1, nClips = sep ? momentsOf(orderedParts(parts)).length : 1;
+    var nSkip = sep ? momentsOf(orderedParts(parts)).filter(function(m){ return m.skip; }).length : 0;
     $('partsSummary').textContent = parts.length
       ? ticked + ' line' + (ticked === 1 ? '' : 's') + ' ticked: ' + parts.length + ' part' + (parts.length === 1 ? '' : 's') + ', ' + fmt(total) + ' in total' + (dur ? ' (from ' + fmt(dur) + ')' : '') + '.' +
-        (sep ? ' ' + nClips + ' separate clip' + (nClips === 1 ? '' : 's') + '.' : '')
+        (sep ? ' ' + nClips + ' separate clip' + (nClips === 1 ? '' : 's') + (nSkip ? ', ' + nSkip + ' left out' : '') + '.' : '')
       : 'Whole video' + (dur ? ' (' + fmt(dur) + ')' : '') + '. Tick Keep on lines in step 2 to keep only those parts.';
     $('clipBox').hidden = !parts.length;   // one unbroken run can still be split into clips
     renderClips(sep ? orderedParts(parts) : parts, sep);
-    $('playCut').disabled = !parts.length || !hasVideo || burning;
+    $('playCut').disabled = !includedParts(parts).length || !hasVideo || burning;
     $('untickAll').disabled = !ticked || burning;
     // "without subtitles" only makes sense for a cut
     Array.prototype.forEach.call(document.querySelectorAll('[data-mkey] button'), function(b){ b.disabled = burning || (!parts.length && b.dataset.val !== 'subs'); });
@@ -4432,7 +4597,7 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
   }
   $('playCut').addEventListener('click', function(){
     if (cutPlay){ video.pause(); stopCutPlay(); return; }
-    var parts = partsFromTicks();
+    var parts = includedParts(partsFromTicks());
     if (!parts.length || !hasVideo || burning) return;
     cutPlay = { parts: parts, k: 0 }; onlyTicked = true; stopAt = null;
     $('playCut').textContent = 'Stop';
@@ -4482,8 +4647,10 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
   }
   function updateTweet(force){
     if (tweetEdited && !force){ countTweet(); return; }
-    var list = cues.filter(function(c){ return c.use; });
-    if (!list.length) list = cues;
+    var skip = {};
+    skippedClips().forEach(function(m){ m.lines.forEach(function(i){ skip[i] = true; }); });
+    var list = cues.filter(function(c, i){ return c.use && !skip[i]; });
+    if (!cues.some(function(c){ return c.use; })) list = cues;
     $('tweetText').value = tweetTextOf(list);
     tweetEdited = false;
     countTweet();
@@ -4736,7 +4903,7 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
       autoText: $('autoText').value, pasteText: $('pasteArea').value,
       cues: cues.map(function(c){
         return { start: c.start, end: c.end, text: c.text, use: !!c.use, joinPrev: !!c.joinPrev, splitHere: !!c.splitHere, block: c.block,
-                 adj: c.adj || null, src: c.src || null, srcText: c.srcText };
+                 adj: c.adj || null, src: c.src || null, srcText: c.srcText, skipClip: !!c.skipClip };
       }),
       blocks: geminiBlocks.map(function(b){ return { start: b.start, end: b.end, text: b.text }; }),
       adjAll: adjAll, opts: { pos: opts.pos, size: opts.size, width: opts.width },
@@ -4767,6 +4934,7 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
       if (c.use) o.use = true;
       if (c.joinPrev) o.joinPrev = true;
       if (c.splitHere) o.splitHere = true;
+      if (c.skipClip) o.skipClip = true;
       if (c.block !== undefined && c.block !== null) o.block = c.block;
       if (c.adj) o.adj = c.adj;
       if (c.src) o.src = c.src;
@@ -4788,6 +4956,10 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
     sessionVideo = s.video;
     if (s.video && !(videoFile && videoFile.name === s.video.name && videoFile.size === s.video.size)){
       setStatus($('videoStatus'), 'Choose the video again: ' + s.video.name + '. Your lines and ticks are back, but a page can’t reopen a video by itself.', 'warn');
+      keptCopyFor(s.video).then(function(f){
+        if (!f || burning || (videoFile && videoFile.name === f.name && videoFile.size === f.size)) return;
+        reopenNote = true; openVideo(f, true);
+      });
     } else sessionVideo = null;
   }
   // Called from the video's loadedmetadata: is this the video the restored lines belong to?
@@ -4820,13 +4992,81 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
   setInterval(saveSession, 2000);
   document.addEventListener('visibilitychange', function(){ if (document.hidden) saveSession(); });
   window.addEventListener('pagehide', saveSession);
+  /* ---------- Save work to a file / Open saved work ----------
+     The same things the autosave keeps, plus the look, crop, credit, clip mode and extra
+     time, as a small .json file (on Android it lands in Download). Opening one puts it all
+     back like Restore does; the video is matched by name and size as there. */
+  function workBase(){ return (videoName || 'subtitles').replace(/[^\p{L}\p{N}_-]+/gu, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'subtitles'; }
+  function workData(){
+    var s = sessionState(); s.burning = false;
+    var c = null;
+    if (hasVideo && !isFull(crop) && video.videoWidth) c = { x: crop.x, y: crop.y, w: crop.w, h: crop.h, a: cropAspect, vw: video.videoWidth, vh: video.videoHeight };
+    return { app: 'subtitle-burner', kind: 'work', v: 1, savedAt: Date.now(), session: s, style: style,
+             credit: JSON.parse(JSON.stringify(credit)), crop: c, clipMode: clipMode, buffer: cutOpts.buffer };
+  }
+  $('saveWork').addEventListener('click', async function(){
+    var st = $('workStatus');
+    if (burning) return;
+    if (tourDemo){ setStatus(st, 'Finish the tour first.', 'warn'); return; }
+    var d = workData();
+    if (!hasWork(d.session)){ setStatus(st, 'Nothing to save yet: make or load some lines first.', 'warn'); return; }
+    var name = workBase() + '_work_' + nameStamp() + '.json', blob = new Blob([JSON.stringify(d)], { type: 'application/json' });
+    var url = URL.createObjectURL(blob), dl = await downloadsReady;
+    try {
+      if (!dl) fallbackSave(url, name); else await dl.save({ filename: name, data: blob });
+      setStatus(st, 'Saved as ' + name + '. Check your Downloads folder.', 'ok');
+    } catch (e){ setStatus(st, 'Couldn’t save the file here (' + ((e && e.message) || e) + ').', 'warn'); }
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 60000);
+  });
+  $('openWork').addEventListener('change', async function(e){
+    var f = e.target.files && e.target.files[0], st = $('workStatus');
+    e.target.value = '';
+    if (!f || burning) return;
+    if (tourDemo){ setStatus(st, 'Finish the tour first.', 'warn'); return; }
+    var d = null;
+    try { d = JSON.parse(await f.text()); } catch (x) {}
+    if (!d || d.app !== 'subtitle-burner' || d.v !== 1 || !d.session || !Array.isArray(d.session.cues)){
+      setStatus(st, f.name + ' isn’t a saved-work file from this app. Nothing was changed.', 'warn'); return;
+    }
+    if (hasWork(sessionState()) && !confirm('Replace your current lines with the saved work from ' + f.name + '?')) return;
+    if (sessionOffer){   // like new work: keep the waiting autosave aside
+      try { localStorage.setItem(SESSION_KEY + '-prev', JSON.stringify(sessionOffer)); } catch (x) {}
+      sessionOffer = null; $('restoreNote').hidden = true;
+    }
+    if (d.style && typeof d.style === 'object') setStyle(d.style);
+    if (d.credit && typeof d.credit === 'object'){
+      credit.on = !!d.credit.on; credit.text = String(d.credit.text || '').slice(0, 120); credit.nosubs = d.credit.nosubs !== false;
+      if (d.credit.adj) ['dx', 'dy', 's', 'w', 'r'].forEach(function(k){ if (typeof d.credit.adj[k] === 'number' && isFinite(d.credit.adj[k])) credit.adj[k] = d.credit.adj[k]; });
+      saveCredit(); showCreditUI();
+    }
+    if (d.buffer !== undefined){
+      var bb = document.querySelector('[data-ckey] [data-val="' + String(d.buffer) + '"]');
+      if (bb){ setBuffer(bb); try { localStorage.setItem('cutBuffer', bb.dataset.val); } catch (x) {} }
+    }
+    if (d.clipMode === 'one' || d.clipMode === 'separate') setClipMode(d.clipMode);
+    var c = d.crop;
+    if (c && c.vw > 0 && c.vh > 0 && c.w > 0.02 && c.h > 0.02 && c.x >= 0 && c.y >= 0 && c.x + c.w <= 1.0001 && c.y + c.h <= 1.0001){
+      var all = loadCrops();
+      all[c.vw + 'x' + c.vh] = { x: c.x, y: c.y, w: c.w, h: c.h, a: ASPECTS[c.a] !== undefined ? c.a : 'free' };
+      try { localStorage.setItem('cropBySize', JSON.stringify(all)); } catch (x) {}
+      if (hasVideo && video.videoWidth === c.vw && video.videoHeight === c.vh){
+        crop = { x: c.x, y: c.y, w: Math.min(c.w, 1 - c.x), h: Math.min(c.h, 1 - c.y) };
+        cropAspect = ASPECTS[c.a] !== undefined ? c.a : 'free';
+        cropStatus(); previewSize();
+      }
+    }
+    restoreSession(d.session);
+    setStatus($('srtStatus'), 'Opened ' + cues.length + ' line' + (cues.length === 1 ? '' : 's') + ' from ' + f.name + '.', 'ok');
+    setStatus(st, 'Opened ' + f.name + '.', 'ok');
+    sessionLast = ''; saveSession();
+  });
 
   /* Save each video as soon as it's done (during a burn, before its card exists), so a crash
      later in a long burn can't take the finished ones with it. Remembered. */
   (function(){
     var cb = $('saveEach');
     try { cb.checked = localStorage.getItem('saveEach') === '1'; } catch (e) {}
-    cb.addEventListener('change', function(){ try { localStorage.setItem('saveEach', cb.checked ? '1' : '0'); } catch (e) {} });
+    cb.addEventListener('change', function(){ try { localStorage.setItem('saveEach', 'saveWork', 'openWork', 'keepVideo', 'repickBtn', cb.checked ? '1' : '0'); } catch (e) {} });
   })();
   async function saveNow(r){
     var url = URL.createObjectURL(r.blob), dl = await downloadsReady;
@@ -4987,7 +5227,7 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
   if (window.__sb) Object.assign(window.__sb, { envNoteFor: envNoteFor, pageEnv: pageEnv, showEnvNote: showEnvNote, canShare: function(){ return canShareFiles; } });
   if (window.__sb) Object.assign(window.__sb, { orderedParts: orderedParts, moveClip: moveClip, partsFromTicks: partsFromTicks, momentsOf: momentsOf, tweetTextOf: tweetTextOf,
     findSpeech: findSpeech, findSpeechDb: findSpeechDb, decodeAudio16k: decodeAudio16k, speechDbLong: speechDbLong,
-    file: function(){ return videoFile; }, setForceLong: function(v){ forceLongSound = !!v; }, saveSession: saveSession, sessionState: sessionState, startTour: startTour, helpStops: helpStops, tourState: function(){ return tour && { k: tour.k, n: tour.stops.length, el: tour.stops[tour.k] }; }, tourDemoOn: function(){ return !!tourDemo; }, blocksNow: function(){ return blocks; }, credit: function(){ return credit; } });
+    file: function(){ return videoFile; }, setForceLong: function(v){ forceLongSound = !!v; }, saveSession: saveSession, sessionState: sessionState, startTour: startTour, helpStops: helpStops, tourState: function(){ return tour && { k: tour.k, n: tour.stops.length, el: tour.stops[tour.k] }; }, tourDemoOn: function(){ return !!tourDemo; }, blocksNow: function(){ return blocks; }, credit: function(){ return credit; }, videoCopy: function(){ return videoCopy; }, setVideoFile: function(f){ videoFile = f; }, workData: workData, includedParts: includedParts });
 })();
 </script>
 </body>
