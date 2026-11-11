@@ -1539,11 +1539,22 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
       origURL = videoURL; videoURL = u;        // the preview switches at its next reload
     });
   }
-  function onVideoPicked(e){
+  // Reads the whole picked file into memory once, so a later revoked content URI
+  // (Android gallery / Google Photos) can't break previews or burning.
+  async function onVideoPicked(e){
     var f = e.target.files && e.target.files[0];
     if (!f) return;
-    openVideo(f, false);
-    e.target.value = '';
+    var input = e.target;
+    var mem = null;
+    try {
+      var buf = await f.arrayBuffer();
+      mem = new File([buf], f.name, { type: f.type || 'video/mp4', lastModified: f.lastModified });
+    } catch (err) {
+      console.warn('Reading the picked video failed:', err);
+      setStatus($('videoStatus'), 'Couldn’t open this video. Try picking it again, or use From files.', 'warn');
+    }
+    input.value = '';
+    if (mem) openVideo(mem, false);
   }
   $('videoInput').addEventListener('change', onVideoPicked);
   $('videoInput2').addEventListener('change', onVideoPicked);
