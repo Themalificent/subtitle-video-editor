@@ -2837,6 +2837,7 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
       Array.prototype.forEach.call(group.querySelectorAll('button'), function(x){
         x.setAttribute('aria-pressed', String(x === b));
       });
+      try { localStorage.setItem('outOpts', JSON.stringify(opts)); } catch (e) {}
       redraw();
     });
   });
@@ -4819,6 +4820,14 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
   $('stCaps').addEventListener('change', function(){ setStyle({ caps: this.checked }); });
   try { style = cleanStyle(JSON.parse(localStorage.getItem(STYLE_KEY) || 'null')); } catch (e) { style = Object.assign({}, STYLE0); }
   renderStyleUI();
+  try {
+    var savedOpts = JSON.parse(localStorage.getItem('outOpts') || 'null');
+    if (savedOpts) ['pos', 'size', 'width'].forEach(function(k){
+      var b = document.querySelector('.seg[data-key="' + k + '"] [data-val="' + savedOpts[k] + '"]');
+      if (b) b.click();
+    });
+  } catch (e) {}
+  try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(function(){}); } catch (e) {}
 
   /* ---------- Start ---------- */
   drawPlaceholder();
@@ -5077,7 +5086,7 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
   (function(){
     var cb = $('saveEach');
     try { cb.checked = localStorage.getItem('saveEach') === '1'; } catch (e) {}
-    cb.addEventListener('change', function(){ try { localStorage.setItem('saveEach', 'saveWork', 'openWork', 'keepVideo', 'repickBtn', cb.checked ? '1' : '0'); } catch (e) {} });
+    cb.addEventListener('change', function(){ try { localStorage.setItem('saveEach', cb.checked ? '1' : '0'); } catch (e) {} });
   })();
   async function saveNow(r){
     var url = URL.createObjectURL(r.blob), dl = await downloadsReady;
