@@ -240,8 +240,9 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
 .moment-list li.drop-above{box-shadow:0 -4px 0 var(--accent)}
 .moment-list li.drop-below{box-shadow:0 4px 0 var(--accent)}
 .clip-part.joined{margin-top:10px;padding-top:8px;border-top:2px dashed var(--line)}
-.clip-head{flex-wrap:wrap}
-.clip-head .include-tick{margin-top:0;font-size:15px}
+.clip-head{flex-wrap:nowrap;align-items:flex-start}
+.clip-head .moment-head{flex:1;min-width:0}
+.clip-head .include-tick{margin-top:0;font-size:13px;flex:none;flex-direction:column;align-items:center;gap:2px;color:var(--muted)}
 .clip.skipped .clip-part,.clip.skipped .moment-head{opacity:.45}
 #copyStatus:empty{display:none}
 .part-time{font-weight:700;font-size:15px;color:var(--muted);margin:2px 0}
@@ -4423,7 +4424,8 @@ textarea.paste-ready{border-color:var(--accent);box-shadow:0 0 0 3px var(--accen
       head.appendChild(title);
       if (m.skip) title.textContent += ' · left out';
       if (clips.length > 1){
-        var inc = tick('include-tick', 'Include this clip', 'skip', p0.first, !m.skip);
+        var inc = tick('include-tick', 'Include', 'skip', p0.first, !m.skip);
+        inc.title = 'Include this clip';
         if (n === 0) inc.setAttribute('data-help', 'Untick a clip to leave it out: it won’t be made, played or put in the tweet text.');
         head.appendChild(inc);
       }
